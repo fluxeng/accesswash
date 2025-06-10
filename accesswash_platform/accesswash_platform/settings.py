@@ -36,6 +36,7 @@ SHARED_APPS = (
     'django.contrib.gis',
     'corsheaders',
     'drf_spectacular',
+    
 )
 
 TENANT_APPS = (
