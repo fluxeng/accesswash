@@ -32,6 +32,7 @@ SHARED_APPS = (
     'users',
     'django.contrib.admin',
     'django.contrib.staticfiles',
+
     'rest_framework',
     'django.contrib.gis',
     'corsheaders',
@@ -40,6 +41,14 @@ SHARED_APPS = (
 )
 
 TENANT_APPS = (
+    # Django apps needed in tenant schemas
+    'django.contrib.contenttypes',
+    'django.contrib.auth', 
+    'django.contrib.admin',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+
+    'users',
     'core',           # AccessWash customer portal
     'distro',         # Field operations
     #'customers',      # Customer management
