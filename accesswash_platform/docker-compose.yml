@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:15-3.3
+    restart: unless-stopped  # 🔄 This makes it auto-restart
+    environment:
+      POSTGRES_DB: accesswash_db
+      POSTGRES_USER: accesswash_user
+      POSTGRES_PASSWORD: AccessWash2024!
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U accesswash_user -d accesswash_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped  # 🔄 This makes it auto-restart
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: .
+    restart: unless-stopped  # 🔄 This makes it auto-restart
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=django-insecure-test-key-for-development-only
+      - DB_HOST=db
+      - DB_NAME=accesswash_db
+      - DB_USER=accesswash_user
+      - DB_PASSWORD=AccessWash2024!
+      - REDIS_URL=redis://redis:6379/1
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0, api.accesswash.org,demo.accesswash.org,app.accesswash.org
+      - CSRF_TRUSTED_ORIGINS=https://api.accesswash.org,https://demo.accesswash.org,https://app.accesswash.org
+
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+volumes:
+  postgres_data:

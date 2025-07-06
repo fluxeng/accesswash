@@ -265,10 +265,25 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://demo.localhost:3000",
+    "https://api.accesswash.org",
+    "https://demo.accesswash.org",
+    "https://app.accesswash.org",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only in development
+
+# CSRF Settings
+CSRF_TRUSTED_ORIGINS = [
+    'https://api.accesswash.org',
+    'https://demo.accesswash.org', 
+    'https://app.accesswash.org',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
+
+CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
+CSRF_COOKIE_SAMESITE = 'Lax'
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
