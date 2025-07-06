@@ -47,6 +47,8 @@ TENANT_APPS = (
     'django.contrib.admin',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'django.contrib.staticfiles',  
+    'django.contrib.gis',
 
     'users',
     'core',           # AccessWash customer portal
@@ -60,6 +62,9 @@ INSTALLED_APPS = list(SHARED_APPS) + [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
 ] + [app for app in TENANT_APPS if app not in SHARED_APPS]
+
+# Add this to ensure admin works properly
+TENANT_ADMIN_PREFIX = ''
 
 MIDDLEWARE = [
     'django_tenants.middleware.main.TenantMainMiddleware',

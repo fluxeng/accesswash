@@ -1,5 +1,5 @@
 """
-URLs for AccessWash Platform - FIXED VERSION
+URLs for AccessWash Platform - PROPERLY FIXED VERSION
 """
 from django.contrib import admin
 from django.urls import path, include
@@ -10,14 +10,27 @@ from django.shortcuts import redirect
 from drf_spectacular.views import (
     SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 )
-from django.db import connection
 
 def schema_health_check(request):
     """Health check that shows current schema"""
+    from django.db import connection
     schema = getattr(connection, 'schema_name', 'unknown')
-    return HttpResponse(f'AccessWash OK - Schema: {schema}')
+    tenant_info = getattr(connection, 'tenant', None)
+    tenant_name = tenant_info.name if tenant_info else 'Unknown'
+    
+    return HttpResponse(f'AccessWash OK - Schema: {schema} - Tenant: {tenant_name}')
 
-# Base URL patterns for all schemas
+def schema_aware_redirect(request):
+    """Redirect based on current schema"""
+    from django.db import connection
+    schema = getattr(connection, 'schema_name', 'public')
+    
+    if schema == 'public':
+        return redirect('/admin/')  # Go to tenant management
+    else:
+        return redirect('/api/docs/')  # Go to API docs for tenant
+
+# ALL URLs - Let django-tenants handle the routing
 urlpatterns = [
     # Admin interface - available everywhere
     path('admin/', admin.site.urls),
@@ -27,42 +40,21 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     
-    # Users API - available everywhere
-    path('api/users/', include('users.urls')),
-    
     # Health check with schema info
     path('health/', schema_health_check, name='health'),
     
     # DRF browsable API
     path('api-auth/', include('rest_framework.urls')),
-]
-
-# Add schema-specific URLs
-try:
-    current_schema = getattr(connection, 'schema_name', 'public')
     
-    if current_schema == 'public':
-        # Public schema: tenant management only
-        urlpatterns.extend([
-            path('api/tenants/', include('tenants.urls')),
-            path('', lambda request: redirect('/api/docs/')),
-        ])
-    else:
-        # Tenant schemas: operational apps
-        urlpatterns.extend([
-            path('api/core/', include('core.urls')),
-            path('api/distro/', include('distro.urls')),  # THIS WILL NOW WORK!
-            path('', lambda request: redirect('/api/docs/')),
-        ])
-        
-except Exception:
-    # Fallback - include all URLs if schema detection fails
-    urlpatterns.extend([
-        path('api/tenants/', include('tenants.urls')),
-        path('api/core/', include('core.urls')), 
-        path('api/distro/', include('distro.urls')),
-        path('', lambda request: redirect('/api/docs/')),
-    ])
+    # ALL API endpoints - django-tenants will filter what's available
+    path('api/tenants/', include('tenants.urls')),      # Only works in public schema
+    path('api/users/', include('users.urls')),          # Works in both schemas
+    path('api/core/', include('core.urls')),            # Only works in tenant schemas
+    path('api/distro/', include('distro.urls')),        # Only works in tenant schemas
+    
+    # Smart redirect based on schema
+    path('', schema_aware_redirect, name='home'),
+]
 
 # Static files
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
