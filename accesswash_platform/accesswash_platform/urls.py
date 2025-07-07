@@ -60,6 +60,6 @@ urlpatterns = [
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Admin site configuration
-admin.site.site_header = "AccessWash Platform V 1.00"
-admin.site.site_title = "AccessWash Admin"
+admin.site.site_header = "AccessWASH Platform V 1.00"
+admin.site.site_title = "AccessWASH Admin"
 admin.site.index_title = "Water Utility Management"
