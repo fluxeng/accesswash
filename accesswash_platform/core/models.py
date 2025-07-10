@@ -1,8 +1,17 @@
 from django.db import models
+from tenants.models import Utility
 
 
 class UtilitySettings(models.Model):
     """Tenant-specific utility settings and branding"""
+    utility = models.OneToOneField(
+        Utility, 
+        on_delete=models.CASCADE, 
+        related_name='settings',
+        null=True,
+        blank=True,
+        help_text="The utility this settings belongs to"
+    )
     utility_name = models.CharField(max_length=200)
     logo = models.ImageField(upload_to='utility_logos/', null=True, blank=True)
     primary_color = models.CharField(max_length=7, default='#2563eb')
@@ -28,4 +37,6 @@ class UtilitySettings(models.Model):
         verbose_name_plural = 'Utility Settings'
     
     def __str__(self):
+        if self.utility:
+            return f"{self.utility.name} Settings"
         return self.utility_name or 'Utility Settings'

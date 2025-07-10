@@ -22,7 +22,7 @@ AUTH_USER_MODEL = 'users.User'
 # Application definition
 SHARED_APPS = (
     'django_tenants',
-    'tenants',
+    'tenants', # Utility Tenant models
     
     'django.contrib.contenttypes',
     'django.contrib.auth',
@@ -52,7 +52,7 @@ TENANT_APPS = (
     'django.contrib.gis',
 
     'users',
-    'core',           # AccessWash customer portal
+    'core',           # Core accesswash platform 
     'distro',         # Field operations
     #'customers',      # Customer management
     #'huduma',         # Customer support (future)
