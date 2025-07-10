@@ -37,6 +37,7 @@ SHARED_APPS = (
     'django.contrib.gis',
     'corsheaders',
     'drf_spectacular',
+    'django_extensions',
     
 )
 
@@ -342,3 +343,5 @@ STATICFILES_DIRS = [
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+TIME_ZONE = 'Africa/Nairobi'
