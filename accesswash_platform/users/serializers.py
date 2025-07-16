@@ -15,16 +15,25 @@ class UserSerializer(serializers.ModelSerializer):
     """Basic user serializer"""
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     permissions = serializers.ListField(source='get_permissions', read_only=True)
+    firstName = serializers.CharField(source='first_name', required=False)
+    lastName = serializers.CharField(source='last_name', required=False)
     
     class Meta:
         model = User
         fields = [
-            'id', 'email', 'employee_id', 'first_name', 'last_name',
+            'id', 'email', 'employee_id', 'firstName', 'lastName',
             'full_name', 'phone_number', 'role', 'avatar',
             'location_tracking_consent', 'last_active', 'is_active',
             'permissions', 'date_joined'
         ]
         read_only_fields = ['id', 'date_joined', 'last_active']
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Ensure firstName and lastName are always present
+        representation.setdefault('firstName', instance.first_name or '')
+        representation.setdefault('lastName', instance.last_name or '')
+        return representation
 
 
 class UserDetailSerializer(UserSerializer):
@@ -134,7 +143,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'notification_preferences', 'role', 'last_active'
         ]
         read_only_fields = ['id', 'email', 'employee_id', 'role', 'last_active']
-
 
 class ChangePasswordSerializer(serializers.Serializer):
     """Serializer for password change"""

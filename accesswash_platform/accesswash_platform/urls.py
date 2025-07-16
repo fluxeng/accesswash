@@ -16,7 +16,14 @@ def schema_health_check(request):
     from django.db import connection
     schema = getattr(connection, 'schema_name', 'unknown')
     tenant_info = getattr(connection, 'tenant', None)
-    tenant_name = tenant_info.name if tenant_info else 'Unknown'
+    # tenant_name = tenant_info.name if tenant_info else 'Unknown'
+    # Temporary fix
+    if tenant_info:
+        tenant_name = getattr(tenant_info, 'name', None) or \
+                     getattr(tenant_info, 'schema_name', 'FakeTenant') or \
+                     str(tenant_info)
+    else:
+        tenant_name = 'Unknown'
     
     return HttpResponse(f'AccessWash OK - Schema: {schema} - Tenant: {tenant_name}')
 

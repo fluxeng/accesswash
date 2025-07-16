@@ -4,7 +4,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     UserViewSet, UserInvitationViewSet,
-    CustomTokenObtainPairView, LogoutView
+    CustomTokenObtainPairView, LogoutView,
+    customer_signup_view
 )
 
 app_name = 'users'
@@ -18,6 +19,9 @@ urlpatterns = [
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='login'),
     path('auth/logout/', LogoutView.as_view(), name='logout'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    
+    # Customer signup endpoint
+    path('auth/customer/signup/', customer_signup_view, name='customer_signup'),
     
     # Router URLs
     path('', include(router.urls)),

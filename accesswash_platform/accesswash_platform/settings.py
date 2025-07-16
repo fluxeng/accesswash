@@ -8,6 +8,12 @@ import os
 from dotenv import load_dotenv
 from datetime import timedelta
 
+GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
+GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
+
+os.environ['GDAL_LIBRARY_PATH'] = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
+os.environ['GEOS_LIBRARY_PATH'] = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
+
 # Load environment variables
 load_dotenv()
 
@@ -61,7 +67,7 @@ TENANT_APPS = (
 
 INSTALLED_APPS = list(SHARED_APPS) + [
     'rest_framework_simplejwt',
-    'rest_framework_simplejwt.token_blacklist',
+    # 'rest_framework_simplejwt.token_blacklist',
 ] + [app for app in TENANT_APPS if app not in SHARED_APPS]
 
 # Add this to ensure admin works properly
@@ -190,8 +196,8 @@ LOGGING = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=2),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    'ROTATE_REFRESH_TOKENS': False, # Temporarily disabled rotation
+    'BLACKLIST_AFTER_ROTATION': False, # Temporarily disable blacklisting 
     'UPDATE_LAST_LOGIN': True,
     
     'ALGORITHM': 'HS256',

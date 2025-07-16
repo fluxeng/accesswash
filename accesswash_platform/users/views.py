@@ -9,6 +9,11 @@ from django.db.models import Q
 from django.utils import timezone
 from django.contrib.auth import logout
 from datetime import timedelta
+
+# Add this import at the top if not already there
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+
 import logging
 
 from .models import User, UserInvitation
@@ -22,11 +27,81 @@ from .permissions import IsOwnerOrAdmin, IsSupervisorOrAdmin
 
 logger = logging.getLogger(__name__)
 
-
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def customer_signup_view(request):
+    """Customer signup endpoint"""
+    # Force public schema at the very beginning
+    from django.db import connection
+    tenant = getattr(connection, 'tenant', None)
+    is_fake_tenant = tenant and str(type(tenant).__name__) == 'FakeTenant'
+    
+    if is_fake_tenant:
+        connection.set_schema_to_public()
+    
+    try:
+        email = request.data.get('email')
+        password = request.data.get('password')
+        first_name = request.data.get('firstName')
+        last_name = request.data.get('lastName')
+        phone_number = request.data.get('phoneNumber')
+        location = request.data.get('location')
+        
+        # Validate required fields
+        if not email or not password:
+            return Response({
+                'success': False,
+                'error': 'Email and password are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Now check for existing user in the correct schema
+        if User.objects.filter(email=email).exists():
+            return Response({
+                'success': False,
+                'error': 'User with this email already exists'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create user (already in correct schema)
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            first_name=first_name or '',
+            last_name=last_name or ''
+        )
+        
+        # Add additional fields
+        if hasattr(user, 'phone_number') and phone_number:
+            user.phone_number = phone_number
+        if hasattr(user, 'location') and location:
+            user.location = location
+        user.save()
+        
+        # Generate tokens
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'success': True,
+            'token': str(refresh.access_token),
+            'user': UserSerializer(user).data
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        logger.error(f"Customer signup error: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Failed to create account. Please try again.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Custom login view that returns user data with tokens"""
     
     def post(self, request, *args, **kwargs):
+        # Temporary fix
+        # Handle FakeTenant scenario - force public schema for JWT
+        from django.db import connection
+        tenant = getattr(connection, 'tenant', None)
+        is_fake_tenant = tenant and str(type(tenant).__name__) == 'FakeTenant'
+
         serializer = LoginSerializer(
             data=request.data,
             context={'request': request}
@@ -36,19 +111,50 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         user = serializer.validated_data['user']
         
         # Generate tokens
-        refresh = RefreshToken.for_user(user)
+        # refresh = RefreshToken.for_user(user)
         
         # Prepare response data
-        user_data = UserSerializer(user).data
+        # user_data = UserSerializer(user).data
         
-        return Response({
-            'success': True,
-            'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            },
-            'user': user_data
-        }, status=status.HTTP_200_OK)
+        # return Response({
+        #     'success': True,
+        #     'tokens': {
+        #         'refresh': str(refresh),
+        #         'access': str(refresh.access_token),
+        #     },
+        #     'user': user_data
+        # }, status=status.HTTP_200_OK)
+        
+        try:
+            if is_fake_tenant:
+                # Force to public schema for JWT operations
+                connection.set_schema_to_public()
+            
+            # Generate tokens
+            refresh = RefreshToken.for_user(user)
+            
+            # Prepare response data
+            user_data = UserSerializer(user).data
+            
+            return Response({
+                'success': True,
+                'token': str(refresh.access_token),
+                'user': user_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            # Fallback: simple token without blacklist
+            from rest_framework_simplejwt.tokens import AccessToken
+            access_token = AccessToken.for_user(user)
+            
+            return Response({
+                'success': True,
+                'tokens': {
+                    'access': str(access_token),
+                    'refresh': None,
+                },
+                'user': UserSerializer(user).data
+            }, status=status.HTTP_200_OK)
 
 
 class ForgotPasswordView(APIView):
