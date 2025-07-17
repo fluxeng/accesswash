@@ -5,43 +5,26 @@ AccessWash - Water Utility Portal Platform
 
 from pathlib import Path
 import os
-from dotenv import load_dotenv
 from datetime import timedelta
 
-
-# Load environment variables
-load_dotenv()
-
-
-# Railway deployment settings
-import dj_database_url
-
-if os.environ.get('RAILWAY_ENVIRONMENT'):
-    DATABASE = {
-
-        'default': dj_database_url.parse(os.environ.get('DATABASE_URL'))
-    }
-
-else:
-    # Database configuration
-    DATABASE_URL = os.getenv('DATABASE_URL')
-
-
-# Load environment variables
-load_dotenv()
-
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-accesswash-change-in-production')
-DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+
 ALLOWED_HOSTS = ['*']
 
+# Custom User Model
 AUTH_USER_MODEL = 'users.User'
 
 # Application definition
 SHARED_APPS = (
     'django_tenants',
-    'tenants', # Utility Tenant models
+    'tenants',  # Utility Tenant models
     
     'django.contrib.contenttypes',
     'django.contrib.auth',
@@ -57,7 +40,6 @@ SHARED_APPS = (
     'corsheaders',
     'drf_spectacular',
     'django_extensions',
-    
 )
 
 TENANT_APPS = (
@@ -90,6 +72,7 @@ MIDDLEWARE = [
     'django_tenants.middleware.main.TenantMainMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Add whitenoise for static files
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -118,17 +101,43 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'accesswash_platform.wsgi.application'
 
-# Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django_tenants.postgresql_backend',
-        'NAME': os.getenv('DB_NAME', 'accesswash_db'),
-        'USER': os.getenv('DB_USER', 'accesswash_user'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'your_secure_password'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
+# Database Configuration
+import dj_database_url
+
+# Railway deployment settings
+if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DATABASE_URL'):
+    # Railway provides DATABASE_URL automatically
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
+            conn_max_age=60,
+            conn_health_checks=True,
+        )
     }
-}
+    # Override engine for django-tenants
+    DATABASES['default']['ENGINE'] = 'django_tenants.postgresql_backend'
+    
+    # Production settings
+    DEBUG = False
+    ALLOWED_HOSTS = ['*']  # Configure properly for production
+    
+    # Static files configuration
+    STATIC_URL = '/static/'
+    STATIC_ROOT = BASE_DIR / 'staticfiles'
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    
+else:
+    # Local development settings
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django_tenants.postgresql_backend',
+            'NAME': os.getenv('DB_NAME', 'accesswash_db'),
+            'USER': os.getenv('DB_USER', 'accesswash_user'),
+            'PASSWORD': os.getenv('DB_PASSWORD', 'AccessWash2024!'),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+        }
+    }
 
 DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
 
@@ -139,7 +148,6 @@ ORIGINAL_BACKEND = "django.contrib.gis.db.backends.postgis"
 STATICFILES_STORAGE = "django_tenants.staticfiles.storage.TenantStaticFilesStorage"
 DEFAULT_FILE_STORAGE = "django_tenants.files.storage.TenantFileSystemStorage"
 SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
-
 
 SITE_ID = 1
 
@@ -302,7 +310,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:8000',
 ]
 
-CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
+CSRF_COOKIE_SECURE = not DEBUG  # Set to True in production with HTTPS
 CSRF_COOKIE_SAMESITE = 'Lax'
 
 # File Upload Settings
@@ -310,12 +318,12 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 FILE_UPLOAD_PERMISSIONS = 0o644
 
-# Cache Configuration (Redis)
+# Cache Configuration (Redis) - Optional for Railway
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1'),
-        'KEY_PREFIX': 'distro_v1',
+        'KEY_PREFIX': 'accesswash_v1',
         'TIMEOUT': 300,  # 5 minutes default
     }
 }
@@ -325,7 +333,7 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_AGE = 86400  # 24 hours
 
-# Email Configuration (for password reset)
+# Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Development
 if not DEBUG:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -334,7 +342,7 @@ if not DEBUG:
     EMAIL_USE_TLS = True
     EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
     EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@distro.app')
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@accesswash.org')
 
 # Security Settings for Production
 if not DEBUG:
@@ -351,16 +359,23 @@ if not DEBUG:
         'MAX_CONNS': 20,
     }
 
-
+# Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
 
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
 
+# Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Internationalization
+LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Africa/Nairobi'
+USE_I18N = True
+USE_TZ = True
+
+# Default primary key field type
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
