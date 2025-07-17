@@ -8,6 +8,25 @@ import os
 from dotenv import load_dotenv
 from datetime import timedelta
 
+
+# Load environment variables
+load_dotenv()
+
+
+# Railway deployment settings
+import dj_database_url
+
+if os.environ.get('RAILWAY_ENVIRONMENT'):
+    DATABASE = {
+
+        'default': dj_database_url.parse(os.environ.get('DATABASE_URL'))
+    }
+
+else:
+    # Database configuration
+    DATABASE_URL = os.getenv('DATABASE_URL')
+
+
 # Load environment variables
 load_dotenv()
 
