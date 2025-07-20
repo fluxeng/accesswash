@@ -16,7 +16,8 @@ def schema_health_check(request):
     from django.db import connection
     schema = getattr(connection, 'schema_name', 'unknown')
     tenant_info = getattr(connection, 'tenant', None)
-    tenant_name = tenant_info.name if tenant_info else 'Unknown'
+    tenant_name = getattr(tenant_info, 'name', 'Unknown') if tenant_info else 'Unknown'
+
     
     return HttpResponse(f'AccessWash OK - Schema: {schema} - Tenant: {tenant_name}')
 

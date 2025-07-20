@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # AccessWash Platform Startup Script
-# This script starts Docker containers and Cloudflare tunnel
-# Run this every time you make changes to the codebase
+# This script starts Docker containers (web, db, redis) and Cloudflare tunnel, with live logging
+# Services persist after Ctrl+C or terminal closure
+# Run with --no-logs to skip live logging and run fully in background
 
 set -e  # Exit on any error
 
@@ -14,31 +15,47 @@ BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
 
-# Configuration
-TUNNEL_ID="77255734-999d-4f75-9663-e8b10d671c16"
-COMPOSE_FILE="docker-compose.yml"
+# Configuration (use environment variables with defaults)
+TUNNEL_ID="${TUNNEL_ID:-77255734-999d-4f75-9663-e8b10d671c16}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+DB_CHECK_TABLE="${DB_CHECK_TABLE:-public.auth_user}"  # Table to check for DB existence
+DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-db}"  # Name of the database container
+LOG_FILE="${LOG_FILE:-accesswash_startup.log}"  # Centralized log file
+TUNNEL_LOG_FILE="tunnel.log"
+
+# Command-line flags
+FORCE_DB_SETUP=false
+NO_LOGS=false
+while [[ "$1" == --* ]]; do
+    case "$1" in
+        --force-db-setup) FORCE_DB_SETUP=true ;;
+        --no-logs) NO_LOGS=true ;;
+        *) print_error "Unknown option: $1"; exit 1 ;;
+    esac
+    shift
+done
 
 # Function to print colored output
 print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "${BLUE}[INFO]$(date '+%Y-%m-%d %H:%M:%S') ${NC} $1" | tee -a "$LOG_FILE"
 }
 
 print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[SUCCESS]$(date '+%Y-%m-%d %H:%M:%S') ${NC} $1" | tee -a "$LOG_FILE"
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}[WARNING]$(date '+%Y-%m-%d %H:%M:%S') ${NC} $1" | tee -a "$LOG_FILE"
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]$(date '+%Y-%m-%d %H:%M:%S') ${NC} $1" | tee -a "$LOG_FILE"
 }
 
 print_header() {
-    echo -e "${PURPLE}========================================${NC}"
-    echo -e "${PURPLE}$1${NC}"
-    echo -e "${PURPLE}========================================${NC}"
+    echo -e "${PURPLE}========================================${NC}" | tee -a "$LOG_FILE"
+    echo -e "${PURPLE}$1${NC}" | tee -a "$LOG_FILE"
+    echo -e "${PURPLE}========================================${NC}" | tee -a "$LOG_FILE"
 }
 
 # Function to check if command exists
@@ -60,7 +77,6 @@ wait_for_service() {
             print_success "$service is ready!"
             return 0
         fi
-        
         echo -n "."
         sleep 2
         attempt=$((attempt + 1))
@@ -70,25 +86,67 @@ wait_for_service() {
     return 1
 }
 
+# Function to wait for database container to be ready
+wait_for_db() {
+    local max_attempts=30
+    local attempt=1
+    
+    print_status "Waiting for database container to be ready..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        local db_container
+        db_container=$(docker-compose ps -q "$DB_CONTAINER_NAME" 2>/dev/null)
+        if [ -n "$db_container" ] && docker exec "$db_container" pg_isready -U accesswash_user -d accesswash_db >/dev/null 2>&1; then
+            print_success "Database container is ready!"
+            return 0
+        fi
+        echo -n "."
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+    
+    print_error "Database container failed to start after $max_attempts attempts"
+    return 1
+}
+
+# Function to check if database is already initialized
+check_database() {
+    print_status "Checking if database is already initialized..."
+    
+    local db_container
+    db_container=$(docker-compose ps -q "$DB_CONTAINER_NAME" 2>/dev/null)
+    
+    if [ -z "$db_container" ]; then
+        print_warning "Database container not found. Assuming new database needed."
+        return 1
+    fi
+    
+    if docker exec "$db_container" psql -U accesswash_user -d accesswash_db -tAc \
+        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'auth_user')" | grep -q "t"; then
+        print_success "Database already initialized (table $DB_CHECK_TABLE exists)."
+        return 0
+    else
+        print_status "Database not initialized. Will set up new database."
+        return 1
+    fi
+}
+
 # Function to check prerequisites
 check_prerequisites() {
     print_header "CHECKING PREREQUISITES"
     
-    # Check Docker
     if ! command_exists docker; then
         print_error "Docker is not installed!"
         exit 1
     fi
     print_success "Docker found"
     
-    # Check Docker Compose
     if ! command_exists docker-compose; then
         print_error "Docker Compose is not installed!"
         exit 1
     fi
     print_success "Docker Compose found"
     
-    # Check Cloudflared
     if ! command_exists cloudflared; then
         print_error "Cloudflared is not installed!"
         print_status "Install with: wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && sudo dpkg -i cloudflared-linux-amd64.deb"
@@ -96,14 +154,12 @@ check_prerequisites() {
     fi
     print_success "Cloudflared found"
     
-    # Check if we're in the right directory
     if [ ! -f "$COMPOSE_FILE" ]; then
-        print_error "docker-compose.yml not found! Make sure you're in the accesswash_platform directory"
+        print_error "$COMPOSE_FILE not found! Make sure you're in the correct directory"
         exit 1
     fi
-    print_success "Found docker-compose.yml"
+    print_success "Found $COMPOSE_FILE"
     
-    # Check tunnel credentials
     if [ ! -f "$HOME/.cloudflared/$TUNNEL_ID.json" ]; then
         print_error "Tunnel credentials not found!"
         print_status "Run: cloudflared tunnel login"
@@ -116,15 +172,17 @@ check_prerequisites() {
 stop_services() {
     print_header "STOPPING EXISTING SERVICES"
     
-    # Stop Docker containers
     print_status "Stopping Docker containers..."
-    docker-compose down || true
+    docker-compose down -v --remove-orphans || true
+    print_success "Docker containers stopped"
     
-    # Stop any running tunnel
     print_status "Stopping existing tunnel..."
+    if [ -f tunnel.pid ] && ps -p $(cat tunnel.pid) >/dev/null; then
+        kill $(cat tunnel.pid) || true
+        rm -f tunnel.pid
+    fi
     pkill -f "cloudflared tunnel" || true
-    
-    print_success "Existing services stopped"
+    print_success "Existing tunnel stopped"
 }
 
 # Function to start Docker services
@@ -132,36 +190,53 @@ start_docker() {
     print_header "STARTING DOCKER SERVICES"
     
     print_status "Building and starting Docker containers..."
-    docker-compose up --build -d
+    docker-compose up --build -d || {
+        print_error "Failed to start Docker containers"
+        exit 1
+    }
     
     print_status "Checking container status..."
-    docker-compose ps
+    docker-compose ps | tee -a "$LOG_FILE"
     
-    # Wait for database to be ready
-    print_status "Waiting for database to initialize..."
-    sleep 15
-    
-    # Wait for web service
+    wait_for_db
     wait_for_service "Django" "http://localhost:8000/health/"
     
     print_success "Docker services started successfully"
 }
 
-# Function to run Django setup
+# Function to set up Django
 setup_django() {
     print_header "SETTING UP DJANGO"
     
+    if [ "$FORCE_DB_SETUP" = false ] && check_database; then
+        print_success "Skipping Django setup (database already initialized). Use --force-db-setup to override."
+        return 0
+    fi
+    
     print_status "Running database migrations..."
-    docker-compose exec -T web python manage.py migrate_schemas --shared || {
-        print_warning "Shared migrations failed, trying again..."
-        sleep 5
-        docker-compose exec -T web python manage.py migrate_schemas --shared
-    }
+    local max_attempts=3
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if docker-compose exec -T web python manage.py migrate_schemas --shared; then
+            print_success "Database migrations completed"
+            break
+        else
+            print_warning "Shared migrations failed (attempt $attempt/$max_attempts). Retrying..."
+            sleep 5
+            attempt=$((attempt + 1))
+        fi
+    done
+    if [ $attempt -gt $max_attempts ]; then
+        print_error "Database migrations failed after $max_attempts attempts"
+        exit 1
+    fi
     
     print_status "Creating demo data..."
-    docker-compose exec -T web python setup_data.py || {
+    if docker-compose exec -T web python setup_data.py; then
+        print_success "Demo data created"
+    else
         print_warning "Demo data creation failed, but continuing..."
-    }
+    fi
     
     print_success "Django setup completed"
 }
@@ -170,7 +245,6 @@ setup_django() {
 start_tunnel() {
     print_header "STARTING CLOUDFLARE TUNNEL"
     
-    # Create tunnel config if it doesn't exist
     mkdir -p ~/.cloudflared
     
     if [ ! -f ~/.cloudflared/config.yml ]; then
@@ -178,7 +252,7 @@ start_tunnel() {
         cat > ~/.cloudflared/config.yml << EOF
 tunnel: $TUNNEL_ID
 credentials-file: ~/.cloudflared/$TUNNEL_ID.json
-
+logfile: $TUNNEL_LOG_FILE
 ingress:
   - hostname: api.accesswash.org
     service: http://localhost:8000
@@ -191,35 +265,45 @@ EOF
         print_success "Tunnel configuration created"
     fi
     
-    # Validate tunnel config
     print_status "Validating tunnel configuration..."
-    cloudflared tunnel --config ~/.cloudflared/config.yml ingress validate
+    if ! cloudflared tunnel --config ~/.cloudflared/config.yml ingress validate; then
+        print_error "Invalid tunnel configuration"
+        exit 1
+    fi
     
-    # Start tunnel in background
     print_status "Starting Cloudflare tunnel..."
-    nohup cloudflared tunnel --config ~/.cloudflared/config.yml run > tunnel.log 2>&1 &
+    nohup cloudflared tunnel --config ~/.cloudflared/config.yml run > "$TUNNEL_LOG_FILE" 2>&1 &
+    local tunnel_pid=$!
+    echo $tunnel_pid > tunnel.pid
+    disown $tunnel_pid  # Detach tunnel process from terminal
     
-    # Save tunnel PID
-    echo $! > tunnel.pid
-    
-    # Wait a moment for tunnel to connect
     sleep 5
-    
-    # Check if tunnel is running
-    if ps -p $(cat tunnel.pid) > /dev/null; then
-        print_success "Cloudflare tunnel started successfully (PID: $(cat tunnel.pid))"
+    if ps -p $tunnel_pid >/dev/null; then
+        print_success "Cloudflare tunnel started successfully (PID: $tunnel_pid)"
     else
         print_error "Failed to start Cloudflare tunnel"
-        print_status "Check tunnel.log for details"
-        return 1
+        cat "$TUNNEL_LOG_FILE" | tee -a "$LOG_FILE"
+        exit 1
     fi
+}
+
+# Function to stream live logs
+stream_logs() {
+    print_header "STREAMING LIVE LOGS"
+    print_status "Streaming logs from Docker containers and Cloudflare tunnel (Ctrl+C to stop)..."
+    print_status "Logs are saved to $LOG_FILE and $TUNNEL_LOG_FILE"
+    # Run logs in a subshell to prevent cleanup on Ctrl+C
+    (
+        trap '' INT  # Disable cleanup trap in subshell
+        tail -f "$TUNNEL_LOG_FILE" &
+        docker-compose logs -f --tail=100
+    ) | tee -a "$LOG_FILE"
 }
 
 # Function to test the deployment
 test_deployment() {
     print_header "TESTING DEPLOYMENT"
     
-    # Test local endpoints
     print_status "Testing local endpoints..."
     if curl -s http://localhost:8000/health/ | grep -q "AccessWash"; then
         print_success "Local health check passed"
@@ -227,20 +311,16 @@ test_deployment() {
         print_error "Local health check failed"
     fi
     
-    # Test live endpoints (wait a bit for tunnel to propagate)
     print_status "Waiting for tunnel to propagate..."
     sleep 10
     
     print_status "Testing live endpoints..."
-    
-    # Test API endpoint
     if curl -s https://api.accesswash.org/health/ | grep -q "AccessWash"; then
         print_success "API endpoint working"
     else
         print_warning "API endpoint not responding yet (DNS propagation?)"
     fi
     
-    # Test demo endpoint
     if curl -s https://demo.accesswash.org/health/ | grep -q "AccessWash"; then
         print_success "Demo endpoint working"
     else
@@ -252,49 +332,61 @@ test_deployment() {
 show_status() {
     print_header "ACCESSWASH PLATFORM STATUS"
     
-    echo -e "${GREEN}🎉 AccessWash Platform is running!${NC}"
-    echo ""
-    echo -e "${BLUE}📊 Docker Containers:${NC}"
-    docker-compose ps
-    echo ""
-    echo -e "${BLUE}🌐 Live URLs:${NC}"
-    echo -e "  🏢 Platform Admin:  ${GREEN}https://api.accesswash.org/admin/${NC}"
-    echo -e "  🚰 Demo Utility:    ${GREEN}https://demo.accesswash.org/admin/${NC}"
-    echo -e "  📚 API Docs:        ${GREEN}https://demo.accesswash.org/api/docs/${NC}"
-    echo -e "  ❤️  Health Check:    ${GREEN}https://demo.accesswash.org/health/${NC}"
-    echo ""
-    echo -e "${BLUE}🔐 Login Credentials:${NC}"
-    echo -e "  Platform: ${YELLOW}kkimtai@gmail.com${NC} / ${YELLOW}Aspire2infinity${NC}"
-    echo -e "  Demo Manager: ${YELLOW}manager@nairobidemo.accesswash.org${NC} / ${YELLOW}Aspire2infinity${NC}"
-    echo -e "  Field Tech: ${YELLOW}field1@nairobidemo.accesswash.org${NC} / ${YELLOW}Aspire2infinity${NC}"
-    echo ""
-    echo -e "${BLUE}📝 Logs:${NC}"
-    echo -e "  Docker: ${YELLOW}docker-compose logs -f web${NC}"
-    echo -e "  Tunnel: ${YELLOW}tail -f tunnel.log${NC}"
-    echo ""
-    echo -e "${BLUE}🛑 Stop Services:${NC}"
-    echo -e "  ${YELLOW}./stop_accesswash.sh${NC} or ${YELLOW}docker-compose down && pkill -f cloudflared${NC}"
+    echo -e "${GREEN}🎉 AccessWash Platform is running!${NC}" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}📊 Docker Containers:${NC}" | tee -a "$LOG_FILE"
+    docker-compose ps | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}🌐 Live URLs:${NC}" | tee -a "$LOG_FILE"
+    echo -e "  🏢 Platform Admin:  ${GREEN}https://api.accesswash.org/admin/${NC}" | tee -a "$LOG_FILE"
+    echo -e "  🚰 Demo Utility:    ${GREEN}https://demo.accesswash.org/admin/${NC}" | tee -a "$LOG_FILE"
+    echo -e "  📚 API Docs:        ${GREEN}https://demo.accesswash.org/api/docs/${NC}" | tee -a "$LOG_FILE"
+    echo -e "  ❤️ Health Check:    ${GREEN}https://demo.accesswash.org/health/${NC}" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}🔐 Login Credentials:${NC}" | tee -a "$LOG_FILE"
+    echo -e "  Platform: ${YELLOW}kkimtai@gmail.com${NC} / ${YELLOW}Aspire2infinity${NC}" | tee -a "$LOG_FILE"
+    echo -e "  Demo Manager: ${YELLOW}manager@nairobidemo.accesswash.org${NC} / ${YELLOW}Aspire2infinity${NC}" | tee -a "$LOG_FILE"
+    echo -e "  Field Tech: ${YELLOW}field1@nairobidemo.accesswash.org${NC} / ${YELLOW}Aspire2infinity${NC}" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}📝 Logs:${NC}" | tee -a "$LOG_FILE"
+    echo -e "  Docker: ${YELLOW}docker-compose logs -f web${NC}" | tee -a "$LOG_FILE"
+    echo -e "  Tunnel: ${YELLOW}tail -f $TUNNEL_LOG_FILE${NC}" | tee -a "$LOG_FILE"
+    echo -e "  Script: ${YELLOW}tail -f $LOG_FILE${NC}" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}🛑 Stop Services:${NC}" | tee -a "$LOG_FILE"
+    echo -e "  ${YELLOW}./stop_accesswash.sh${NC} or ${YELLOW}docker-compose down && pkill -f cloudflared${NC}" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}🔄 Force Database Setup:${NC}" | tee -a "$LOG_FILE"
+    echo -e "  ${YELLOW}./$(basename "$0") --force-db-setup${NC}" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}🔄 Run in Background (No Logs):${NC}" | tee -a "$LOG_FILE"
+    echo -e "  ${YELLOW}./$(basename "$0") --no-logs${NC}" | tee -a "$LOG_FILE"
 }
 
-# Function to handle cleanup on exit
+# Function to handle cleanup on error exit
 cleanup() {
+    print_status "Cleaning up due to error..."
     if [ -f tunnel.pid ]; then
-        print_status "Cleaning up tunnel process..."
+        print_status "Stopping tunnel process..."
         kill $(cat tunnel.pid) 2>/dev/null || true
         rm -f tunnel.pid
     fi
+    print_status "Stopping Docker containers..."
+    docker-compose down -v --remove-orphans || true
+    print_success "Cleanup completed"
 }
 
-# Set trap for cleanup
-trap cleanup EXIT
+# Set trap for cleanup only on error exit
+trap 'if [[ $? -ne 0 ]]; then cleanup; fi' EXIT
 
 # Main execution
 main() {
     print_header "ACCESSWASH PLATFORM STARTUP"
-    echo -e "${GREEN}Starting AccessWash Platform with live deployment...${NC}"
-    echo ""
+    echo -e "${GREEN}Starting AccessWash Platform with live deployment...${NC}" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
     
-    # Run all steps
+    echo "AccessWash Platform Startup Log - $(date '+%Y-%m-%d %H:%M:%S')" > "$LOG_FILE"
+    
     check_prerequisites
     stop_services
     start_docker
@@ -304,16 +396,10 @@ main() {
     show_status
     
     print_success "AccessWash Platform startup completed!"
-    
-    # Keep tunnel running in foreground
-    print_status "Tunnel is running in background. Press Ctrl+C to stop all services."
-    
-    # Wait for tunnel process or user interrupt
-    if [ -f tunnel.pid ]; then
-        while ps -p $(cat tunnel.pid) > /dev/null; do
-            sleep 5
-        done
-        print_error "Tunnel process died unexpectedly"
+    if [ "$NO_LOGS" = false ]; then
+        stream_logs  # Stream live logs unless --no-logs is specified
+    else
+        print_status "Skipping live logs (--no-logs specified). Check $LOG_FILE and $TUNNEL_LOG_FILE."
     fi
 }
 
