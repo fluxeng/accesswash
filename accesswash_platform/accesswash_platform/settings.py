@@ -51,10 +51,9 @@ TENANT_APPS = (
     'django.contrib.staticfiles',  
     'django.contrib.gis',
 
-    'users',
+    'users',          # Utility custer models
     'core',           # Core accesswash platform 
     'distro',         # Field operations
-    #'customers',      # Customer management
     #'huduma',         # Customer support (future)
     #'analytics',      # Analytics (future)
 )
