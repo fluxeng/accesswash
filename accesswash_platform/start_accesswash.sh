@@ -22,6 +22,7 @@ DB_CHECK_TABLE="${DB_CHECK_TABLE:-public.auth_user}"  # Table to check for DB ex
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-db}"  # Name of the database container
 LOG_FILE="${LOG_FILE:-accesswash_startup.log}"  # Centralized log file
 TUNNEL_LOG_FILE="tunnel.log"
+DOCKER_LOG_FILE="docker.log"
 
 # Command-line flags
 FORCE_DB_SETUP=false
@@ -183,6 +184,10 @@ stop_services() {
     fi
     pkill -f "cloudflared tunnel" || true
     print_success "Existing tunnel stopped"
+    
+    # Stop any existing log tailing processes
+    pkill -f "tail.*$DOCKER_LOG_FILE" || true
+    pkill -f "tail.*$TUNNEL_LOG_FILE" || true
 }
 
 # Function to start Docker services
@@ -287,17 +292,49 @@ EOF
     fi
 }
 
-# Function to stream live logs
+# Function to start background log collection
+start_log_collection() {
+    print_status "Starting background log collection..."
+    
+    # Start Docker log collection in background
+    nohup docker-compose logs -f --tail=100 > "$DOCKER_LOG_FILE" 2>&1 &
+    local docker_log_pid=$!
+    echo $docker_log_pid > docker_logs.pid
+    disown $docker_log_pid
+    
+    print_success "Background log collection started (Docker logs PID: $docker_log_pid)"
+}
+
+# Function to stream live logs with proper signal handling
 stream_logs() {
     print_header "STREAMING LIVE LOGS"
-    print_status "Streaming logs from Docker containers and Cloudflare tunnel (Ctrl+C to stop)..."
-    print_status "Logs are saved to $LOG_FILE and $TUNNEL_LOG_FILE"
-    # Run logs in a subshell to prevent cleanup on Ctrl+C
+    print_status "Streaming logs from Docker containers and Cloudflare tunnel"
+    print_status "Press Ctrl+C to stop log streaming (services will continue running)"
+    print_status "Logs are saved to $LOG_FILE, $DOCKER_LOG_FILE, and $TUNNEL_LOG_FILE"
+    
+    # Create a function to handle signals gracefully
+    handle_log_interrupt() {
+        echo ""
+        print_warning "Log streaming stopped by user. Services continue running in background."
+        print_status "To view logs later:"
+        echo -e "  Docker: ${YELLOW}tail -f $DOCKER_LOG_FILE${NC}"
+        echo -e "  Tunnel: ${YELLOW}tail -f $TUNNEL_LOG_FILE${NC}"
+        echo -e "  Script: ${YELLOW}tail -f $LOG_FILE${NC}"
+        echo ""
+        show_final_status
+        exit 0
+    }
+    
+    # Set up signal handling for log streaming only
+    trap handle_log_interrupt INT TERM
+    
+    # Stream logs from both sources, but handle interruption gracefully
     (
-        trap '' INT  # Disable cleanup trap in subshell
-        tail -f "$TUNNEL_LOG_FILE" &
-        docker-compose logs -f --tail=100
-    ) | tee -a "$LOG_FILE"
+        # Use tail to follow both log files
+        tail -f "$TUNNEL_LOG_FILE" 2>/dev/null &
+        tail -f "$DOCKER_LOG_FILE" 2>/dev/null &
+        wait
+    ) || true  # Don't exit on interrupt
 }
 
 # Function to test the deployment
@@ -348,36 +385,45 @@ show_status() {
     echo -e "  Demo Manager: ${YELLOW}manager@nairobidemo.accesswash.org${NC} / ${YELLOW}Aspire2infinity${NC}" | tee -a "$LOG_FILE"
     echo -e "  Field Tech: ${YELLOW}field1@nairobidemo.accesswash.org${NC} / ${YELLOW}Aspire2infinity${NC}" | tee -a "$LOG_FILE"
     echo "" | tee -a "$LOG_FILE"
-    echo -e "${BLUE}📝 Logs:${NC}" | tee -a "$LOG_FILE"
-    echo -e "  Docker: ${YELLOW}docker-compose logs -f web${NC}" | tee -a "$LOG_FILE"
-    echo -e "  Tunnel: ${YELLOW}tail -f $TUNNEL_LOG_FILE${NC}" | tee -a "$LOG_FILE"
-    echo -e "  Script: ${YELLOW}tail -f $LOG_FILE${NC}" | tee -a "$LOG_FILE"
-    echo "" | tee -a "$LOG_FILE"
-    echo -e "${BLUE}🛑 Stop Services:${NC}" | tee -a "$LOG_FILE"
-    echo -e "  ${YELLOW}./stop_accesswash.sh${NC} or ${YELLOW}docker-compose down && pkill -f cloudflared${NC}" | tee -a "$LOG_FILE"
-    echo "" | tee -a "$LOG_FILE"
-    echo -e "${BLUE}🔄 Force Database Setup:${NC}" | tee -a "$LOG_FILE"
-    echo -e "  ${YELLOW}./$(basename "$0") --force-db-setup${NC}" | tee -a "$LOG_FILE"
-    echo "" | tee -a "$LOG_FILE"
-    echo -e "${BLUE}🔄 Run in Background (No Logs):${NC}" | tee -a "$LOG_FILE"
-    echo -e "  ${YELLOW}./$(basename "$0") --no-logs${NC}" | tee -a "$LOG_FILE"
 }
 
-# Function to handle cleanup on error exit
-cleanup() {
-    print_status "Cleaning up due to error..."
-    if [ -f tunnel.pid ]; then
-        print_status "Stopping tunnel process..."
-        kill $(cat tunnel.pid) 2>/dev/null || true
-        rm -f tunnel.pid
+# Function to show final status (called when exiting)
+show_final_status() {
+    echo -e "${BLUE}📝 View Logs:${NC}"
+    echo -e "  Docker: ${YELLOW}tail -f $DOCKER_LOG_FILE${NC}"
+    echo -e "  Tunnel: ${YELLOW}tail -f $TUNNEL_LOG_FILE${NC}"
+    echo -e "  Script: ${YELLOW}tail -f $LOG_FILE${NC}"
+    echo ""
+    echo -e "${BLUE}🛑 Stop Services:${NC}"
+    echo -e "  ${YELLOW}./stop_accesswash.sh${NC} or ${YELLOW}docker-compose down && pkill -f cloudflared${NC}"
+    echo ""
+    echo -e "${BLUE}🔄 Restart with Options:${NC}"
+    echo -e "  Force DB Setup: ${YELLOW}./$(basename "$0") --force-db-setup${NC}"
+    echo -e "  No Live Logs: ${YELLOW}./$(basename "$0") --no-logs${NC}"
+}
+
+# Function to handle cleanup on error exit only
+cleanup_on_error() {
+    if [[ $? -ne 0 ]]; then
+        print_status "Cleaning up due to error..."
+        if [ -f tunnel.pid ]; then
+            print_status "Stopping tunnel process..."
+            kill $(cat tunnel.pid) 2>/dev/null || true
+            rm -f tunnel.pid
+        fi
+        if [ -f docker_logs.pid ]; then
+            print_status "Stopping log collection..."
+            kill $(cat docker_logs.pid) 2>/dev/null || true
+            rm -f docker_logs.pid
+        fi
+        print_status "Stopping Docker containers..."
+        docker-compose down -v --remove-orphans || true
+        print_success "Cleanup completed"
     fi
-    print_status "Stopping Docker containers..."
-    docker-compose down -v --remove-orphans || true
-    print_success "Cleanup completed"
 }
 
-# Set trap for cleanup only on error exit
-trap 'if [[ $? -ne 0 ]]; then cleanup; fi' EXIT
+# Set trap for cleanup only on error exit (not normal interrupts)
+trap cleanup_on_error EXIT
 
 # Main execution
 main() {
@@ -392,14 +438,18 @@ main() {
     start_docker
     setup_django
     start_tunnel
+    start_log_collection
     test_deployment
     show_status
     
     print_success "AccessWash Platform startup completed!"
+    
     if [ "$NO_LOGS" = false ]; then
-        stream_logs  # Stream live logs unless --no-logs is specified
+        stream_logs  # Stream live logs with proper signal handling
     else
-        print_status "Skipping live logs (--no-logs specified). Check $LOG_FILE and $TUNNEL_LOG_FILE."
+        print_status "Skipping live logs (--no-logs specified)."
+        show_final_status
+        print_success "AccessWash Platform is running in background. Check log files for status."
     fi
 }
 
