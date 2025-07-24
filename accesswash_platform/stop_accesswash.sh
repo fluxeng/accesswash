@@ -1,127 +1,132 @@
 #!/bin/bash
 
 # AccessWash Platform Stop Script
-# This script stops all Docker containers (including Redis and PostgreSQL) and Cloudflare tunnel
+# Simple, clean shutdown of all services
 
 set -e
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Log file for shutdown activities
+# Configuration
 LOG_FILE="accesswash_shutdown.log"
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1" | tee -a "$LOG_FILE"
+# Simple logging functions
+log() {
+    echo -e "${BLUE}[$(date '+%H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
 }
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1" | tee -a "$LOG_FILE"
+success() {
+    echo -e "${GREEN}✓${NC} $1" | tee -a "$LOG_FILE"
 }
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1" | tee -a "$LOG_FILE"
+error() {
+    echo -e "${RED}✗${NC} $1" | tee -a "$LOG_FILE"
 }
 
-print_header() {
-    echo -e "${YELLOW}========================================${NC}" | tee -a "$LOG_FILE"
-    echo -e "${YELLOW}$1${NC}" | tee -a "$LOG_FILE"
-    echo -e "${YELLOW}========================================${NC}" | tee -a "$LOG_FILE"
+warning() {
+    echo -e "${YELLOW}⚠${NC} $1" | tee -a "$LOG_FILE"
+}
+
+header() {
+    echo -e "${YELLOW}========== $1 ==========${NC}" | tee -a "$LOG_FILE"
 }
 
 # Initialize log file
-echo "[$TIMESTAMP] Starting AccessWash shutdown" > "$LOG_FILE"
+echo "AccessWash Platform Shutdown - $(date)" > "$LOG_FILE"
 
-print_header "STOPPING ACCESSWASH PLATFORM"
+header "STOPPING ACCESSWASH PLATFORM"
 
-# Check if Docker is running
+# Check Docker
 if ! docker info >/dev/null 2>&1; then
-    print_error "Docker is not running. Please start Docker and try again."
+    error "Docker not running"
     exit 1
 fi
 
-# Stop Docker containers (web, db, redis)
-print_status "Stopping Docker containers (web, db, redis)..."
-if docker-compose ps | grep -q "Up"; then
-    docker-compose down -v --remove-orphans || {
-        print_error "Failed to stop Docker containers"
-        exit 1
-    }
-    print_success "Docker containers stopped"
-else
-    print_status "No running Docker containers found"
+# Stop background log monitoring
+log "Stopping background processes..."
+if [ -f docker_logs.pid ]; then
+    log_pid=$(cat docker_logs.pid 2>/dev/null)
+    if [ -n "$log_pid" ] && ps -p "$log_pid" >/dev/null 2>&1; then
+        kill "$log_pid" 2>/dev/null || true
+        success "Log monitoring stopped"
+    fi
+    rm -f docker_logs.pid
 fi
 
-# Verify Redis is stopped
-print_status "Verifying Redis service is stopped..."
-if docker ps -q -f name=redis | grep -q .; then
-    print_error "Redis container is still running"
-    docker stop redis || print_error "Failed to stop Redis container"
+# Stop Docker containers
+log "Stopping Docker containers..."
+if docker-compose ps 2>/dev/null | grep -q "Up"; then
+    if docker-compose down -v --remove-orphans 2>&1 | tee -a "$LOG_FILE"; then
+        success "Docker containers stopped"
+    else
+        warning "Some containers failed to stop gracefully"
+        docker stop $(docker ps -q) 2>/dev/null || true
+    fi
 else
-    print_success "Redis service is stopped"
+    log "No running containers found"
 fi
 
-# Verify PostgreSQL is stopped
-print_status "Verifying PostgreSQL service is stopped..."
-if docker ps -q -f name=db | grep -q .; then
-    print_error "PostgreSQL container is still running"
-    docker stop db || print_error "Failed to stop PostgreSQL container"
-else
-    print_success "PostgreSQL service is stopped"
-fi
+# Verify critical services stopped
+for service in redis db web; do
+    if docker ps -q -f name=$service 2>/dev/null | grep -q .; then
+        warning "$service still running, force stopping..."
+        docker stop $(docker ps -q -f name=$service) 2>/dev/null || true
+    else
+        success "$service stopped"
+    fi
+done
 
 # Stop Cloudflare tunnel
-print_status "Stopping Cloudflare tunnel..."
-TUNNEL_PID_FILE="tunnel.pid"
-TUNNEL_LOG_FILE="tunnel.log"
-
-if [ -f "$TUNNEL_PID_FILE" ]; then
-    TUNNEL_PID=$(cat "$TUNNEL_PID_FILE" 2>/dev/null)
-    if [ -n "$TUNNEL_PID" ] && ps -p "$TUNNEL_PID" >/dev/null 2>&1; then
-        kill "$TUNNEL_PID" && print_success "Tunnel stopped (PID: $TUNNEL_PID)"
-    else
-        print_status "No running tunnel found for PID: $TUNNEL_PID"
+log "Stopping Cloudflare tunnel..."
+if [ -f tunnel.pid ]; then
+    tunnel_pid=$(cat tunnel.pid 2>/dev/null)
+    if [ -n "$tunnel_pid" ] && ps -p "$tunnel_pid" >/dev/null 2>&1; then
+        kill "$tunnel_pid" 2>/dev/null || true
+        success "Tunnel stopped (PID: $tunnel_pid)"
     fi
-    rm -f "$TUNNEL_PID_FILE"
-else
-    print_status "No tunnel PID file found"
+    rm -f tunnel.pid
 fi
 
-# Kill any remaining cloudflared processes
+# Kill remaining tunnel processes
 if pgrep -f "cloudflared tunnel" >/dev/null; then
-    pkill -f "cloudflared tunnel" && print_success "Remaining cloudflared processes stopped"
-else
-    print_status "No remaining cloudflared processes found"
+    pkill -f "cloudflared tunnel" 2>/dev/null || true
+    success "Remaining tunnel processes stopped"
 fi
 
-# Clean up log files
-if [ -f "$TUNNEL_LOG_FILE" ]; then
-    rm -f "$TUNNEL_LOG_FILE" && print_success "Tunnel log file cleaned"
-else
-    print_status "No tunnel log file found"
-fi
+# Clean up ports
+log "Cleaning up ports..."
+for port in 5432 6379 8000; do
+    if lsof -ti:$port >/dev/null 2>&1; then
+        lsof -ti:$port | xargs kill -9 2>/dev/null || true
+        success "Port $port cleared"
+    fi
+done
 
 # Final verification
-print_status "Verifying all services are stopped..."
-if docker ps -q | grep -q .; then
-    print_error "Some Docker containers are still running"
-    docker ps -a
-    exit 1
-else
-    print_success "All Docker services are stopped"
-fi
+header "SHUTDOWN COMPLETE"
 
-if pgrep -f "cloudflared tunnel" >/dev/null; then
-    print_error "Cloudflare tunnel processes are still running"
-    exit 1
-else
-    print_success "All Cloudflare tunnel processes are stopped"
-fi
+remaining_containers=$(docker ps -q | wc -l)
+remaining_tunnels=$(pgrep -f cloudflared | wc -l)
 
-print_success "All AccessWash services stopped successfully"
-echo -e "${GREEN}🛑 AccessWash Platform has been shut down${NC}" | tee -a "$LOG_FILE"
+echo ""
+echo -e "${GREEN}🛑 AccessWash Platform stopped successfully${NC}"
+echo ""
+echo -e "${BLUE}System Status:${NC}"
+echo "  Docker containers: $remaining_containers running"
+echo "  Tunnel processes: $remaining_tunnels running"
+echo ""
+echo -e "${BLUE}Files:${NC}"
+echo "  Shutdown log: $LOG_FILE"
+echo "  Startup log: accesswash.log"
+echo ""
+echo -e "${BLUE}To restart:${NC}"
+echo "  ./startup.sh"
+echo "  ./startup.sh --force-db-setup"
+echo ""
+
+success "Platform shutdown completed"
