@@ -183,18 +183,34 @@ start_tunnel() {
     
     # Create config if needed
     if [ ! -f ~/.cloudflared/config.yml ]; then
-        log "Creating tunnel config..."
+        log "Creating tunnel config with wildcard support..."
         mkdir -p ~/.cloudflared
         cat > ~/.cloudflared/config.yml << EOF
 tunnel: $TUNNEL_ID
 credentials-file: ~/.cloudflared/$TUNNEL_ID.json
 ingress:
+  # Health check endpoint
+  - hostname: health.accesswash.org
+    service: http://localhost:8000/health/
+  
+  # Main platform admin (specific)
   - hostname: api.accesswash.org
     service: http://localhost:8000
+    
+  # Demo utility (specific)
   - hostname: demo.accesswash.org
     service: http://localhost:8000
+    
+  # Main app (specific)
   - hostname: app.accesswash.org
     service: http://localhost:8000
+    
+  # WILDCARD CATCH-ALL for all other subdomains
+  # This handles tenant1.accesswash.org, utility2.accesswash.org, etc.
+  - hostname: "*.accesswash.org"
+    service: http://localhost:8000
+    
+  # Default fallback
   - service: http_status:404
 EOF
     fi

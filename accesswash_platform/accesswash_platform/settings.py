@@ -100,45 +100,32 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'accesswash_platform.wsgi.application'
 
-# Database Configuration
-import dj_database_url
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    '.accesswash.org',  # This allows ALL subdomains: *.accesswash.org
+    'api.accesswash.org',
+    'demo.accesswash.org', 
+    'app.accesswash.org',
+]
 
-# Railway deployment settings
-if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DATABASE_URL'):
-    # Railway provides DATABASE_URL automatically
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=60,
-            conn_health_checks=True,
-        )
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django_tenants.postgresql_backend',
+        'NAME': os.getenv('DB_NAME', 'accesswash_db'),
+        'USER': os.getenv('DB_USER', 'accesswash_user'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'AccessWash2024!'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
-    # Override engine for django-tenants
-    DATABASES['default']['ENGINE'] = 'django_tenants.postgresql_backend'
-    
-    # Production settings
-    DEBUG = False
-    ALLOWED_HOSTS = ['*']  # Configure properly for production
-    
-    # Static files configuration
-    STATIC_URL = '/static/'
-    STATIC_ROOT = BASE_DIR / 'staticfiles'
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-    
-else:
-    # Local development settings
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django_tenants.postgresql_backend',
-            'NAME': os.getenv('DB_NAME', 'accesswash_db'),
-            'USER': os.getenv('DB_USER', 'accesswash_user'),
-            'PASSWORD': os.getenv('DB_PASSWORD', 'AccessWash2024!'),
-            'HOST': os.getenv('DB_HOST', 'localhost'),
-            'PORT': os.getenv('DB_PORT', '5432'),
-        }
-    }
+}
 
 DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
+
+DATABASES['default']['CONN_MAX_AGE'] = 60
+
 
 # Django Tenants Configuration
 TENANT_MODEL = "tenants.Utility"
@@ -210,6 +197,12 @@ LOGGING = {
             'propagate': False,
         },
     },
+}
+
+LOGGING['loggers']['django_tenants'] = {
+    'handlers': ['file', 'console'],
+    'level': 'INFO',
+    'propagate': True,
 }
 
 # JWT Settings
@@ -300,10 +293,17 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only in development
 
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.accesswash\.org$",  # All subdomains
+    r"^http://localhost:8000$",
+    r"^http://127\.0\.0\.1:8000$",
+]
+
 # CSRF Settings
 CSRF_TRUSTED_ORIGINS = [
+    'https://*.accesswash.org',  # Wildcard for all subdomains
     'https://api.accesswash.org',
-    'https://demo.accesswash.org', 
+    'https://demo.accesswash.org',
     'https://app.accesswash.org',
     'http://localhost:8000',
     'http://127.0.0.1:8000',
@@ -311,6 +311,14 @@ CSRF_TRUSTED_ORIGINS = [
 
 CSRF_COOKIE_SECURE = not DEBUG  # Set to True in production with HTTPS
 CSRF_COOKIE_SAMESITE = 'Lax'
+
+SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
+
+
+# Content Security Policy for subdomains
+CSP_DEFAULT_SRC = ("'self'", "*.accesswash.org")
+CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'", "*.accesswash.org")
+CSP_STYLE_SRC = ("'self'", "'unsafe-inline'", "*.accesswash.org")
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
@@ -354,9 +362,7 @@ if not DEBUG:
     
     # Database optimization for production
     DATABASES['default']['CONN_MAX_AGE'] = 60
-    DATABASES['default']['OPTIONS'] = {
-        'MAX_CONNS': 20,
-    }
+
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
