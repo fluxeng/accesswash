@@ -1,5 +1,5 @@
 """
-URLs for AccessWash Platform - PROPERLY FIXED VERSION
+URLs for AccessWash Platform - FIXED VERSION
 """
 from django.contrib import admin
 from django.urls import path, include
@@ -49,7 +49,7 @@ urlpatterns = [
     
     # ALL API endpoints - django-tenants will filter what's available
     path('api/tenants/', include('tenants.urls')),      # Only works in public schema
-    path('api/users/', include('users.urls')),          # Works in both schemas
+    path('api/users/', include('users.urls')),          # Works in both schemas (includes auth endpoints)
     path('api/core/', include('core.urls')),            # Only works in tenant schemas
     path('api/distro/', include('distro.urls')),        # Only works in tenant schemas
     

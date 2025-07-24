@@ -1,0 +1,216 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Email Testing - {{ block.super }}{% endblock %}
+
+{% block extrahead %}
+<style>
+.email-test-form {
+    max-width: 600px;
+    margin: 20px 0;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 8px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.form-group input, .form-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-right: 10px;
+}
+
+.btn-primary {
+    background: #417690;
+    color: white;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.config-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+}
+
+.config-table th,
+.config-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.config-table th {
+    background: #f8f9fa;
+    font-weight: bold;
+}
+
+.status-success {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.status-error {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.config-value {
+    font-family: monospace;
+    background: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Email Testing</h1>
+
+<p>Use this tool to test email functionality in your AccessWash platform.</p>
+
+<!-- Email Configuration Display -->
+<div class="email-test-form">
+    <h2>Current Email Configuration</h2>
+    <table class="config-table">
+        <tr>
+            <th>Setting</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Email Backend</td>
+            <td><span class="config-value">{{ email_backend }}</span></td>
+        </tr>
+        <tr>
+            <td>SMTP Host</td>
+            <td><span class="config-value">{{ email_host }}</span></td>
+        </tr>
+        <tr>
+            <td>SMTP Port</td>
+            <td><span class="config-value">{{ email_port }}</span></td>
+        </tr>
+        <tr>
+            <td>SMTP User</td>
+            <td><span class="config-value">{{ email_user }}</span></td>
+        </tr>
+        <tr>
+            <td>Default From Email</td>
+            <td><span class="config-value">{{ default_from_email }}</span></td>
+        </tr>
+    </table>
+</div>
+
+<!-- Test Email Form -->
+<div class="email-test-form">
+    <h2>Send Test Email</h2>
+    <form method="post">
+        {% csrf_token %}
+        
+        <div class="form-group">
+            <label for="email">Recipient Email Address:</label>
+            <input type="email" id="email" name="email" value="{{ email|default:'' }}" required 
+                   placeholder="Enter email address to test">
+        </div>
+        
+        <div class="form-group">
+            <label for="test_type">Test Type:</label>
+            <select id="test_type" name="test_type">
+                <option value="service" {% if test_type == 'service' %}selected{% endif %}>
+                    EmailService (Recommended)
+                </option>
+                <option value="django" {% if test_type == 'django' %}selected{% endif %}>
+                    Django send_mail
+                </option>
+            </select>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Send Test Email</button>
+        <button type="button" class="btn btn-secondary" onclick="sendTestInvitation()">
+            Send Test Invitation
+        </button>
+    </form>
+    
+    {% if success %}
+        <div class="status-success" style="margin-top: 15px;">
+            ✅ Email sent successfully!
+        </div>
+    {% elif error_message %}
+        <div class="status-error" style="margin-top: 15px;">
+            ❌ Error: {{ error_message }}
+        </div>
+    {% endif %}
+</div>
+
+<!-- Instructions -->
+<div class="email-test-form">
+    <h2>Troubleshooting</h2>
+    <ul>
+        <li><strong>Console Backend:</strong> Check the Django console output for emails</li>
+        <li><strong>SMTP Issues:</strong> Verify your email credentials and security settings</li>
+        <li><strong>Gmail:</strong> Use App Passwords instead of your regular password</li>
+        <li><strong>Firewall:</strong> Ensure ports 587 (TLS) or 465 (SSL) are open</li>
+        <li><strong>Template Issues:</strong> Check Django logs for template rendering errors</li>
+    </ul>
+    
+    <h3>Gmail Setup Instructions</h3>
+    <ol>
+        <li>Enable 2-Factor Authentication on your Gmail account</li>
+        <li>Go to Google Account → Security → App passwords</li>
+        <li>Generate an app password for "Mail"</li>
+        <li>Use this app password in your EMAIL_HOST_PASSWORD setting</li>
+    </ol>
+</div>
+
+<script>
+function sendTestInvitation() {
+    const email = document.getElementById('email').value;
+    if (!email) {
+        alert('Please enter an email address');
+        return;
+    }
+    
+    fetch('{% url "admin:send_test_invitation" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: `email=${encodeURIComponent(email)}&role=field_tech`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ Test invitation sent successfully!');
+        } else {
+            alert('❌ Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('❌ Network error: ' + error);
+    });
+}
+</script>
+{% endblock %}

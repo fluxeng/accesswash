@@ -1,0 +1,26 @@
+{% extends "admin/index.html" %}
+{% load static %}
+
+{% block content %}
+{{ block.super }}
+
+<div class="module" style="margin-top: 20px;">
+    <h2>System Tools</h2>
+    <table summary="System tools">
+        <tbody>
+            <tr class="model-link">
+                <th scope="row">
+                    <a href="{% url 'core:email_test' %}">📧 Email Testing</a>
+                </th>
+                <td>Test email functionality and configuration</td>
+            </tr>
+            <tr class="model-link">
+                <th scope="row">
+                    <a href="{% url 'core:email_config' %}">⚙️ Email Configuration</a>
+                </th>
+                <td>View current email settings</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}

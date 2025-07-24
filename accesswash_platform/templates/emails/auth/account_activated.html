@@ -1,0 +1,42 @@
+{% extends "emails/base/email_base.html" %}
+
+{% block content %}
+<div class="greeting">
+    Welcome {{ user.get_full_name|default:user.first_name }}!
+</div>
+
+<div class="content">
+    <div class="info-box success">
+        <strong>🎉 Account Activated Successfully</strong><br>
+        Your {{ utility_name }} account is now active and ready to use!
+    </div>
+    
+    <p>Congratulations! You have successfully joined the {{ utility_name }} team on the AccessWash platform.</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ login_url }}" class="button">Access Your Dashboard</a>
+    </div>
+    
+    <p>As a <strong>{{ user.get_role_display }}</strong>, you now have access to:</p>
+    
+    <ul>
+        <li>🗺️ Interactive infrastructure mapping</li>
+        <li>📱 Field operations management</li>
+        <li>🔧 Asset tracking and maintenance</li>
+        <li>📊 Reporting and analytics</li>
+        <li>👥 Team collaboration tools</li>
+    </ul>
+    
+    <div class="info-box">
+        <strong>Next Steps:</strong><br>
+        1. Login to your dashboard using the button above<br>
+        2. Complete your profile information<br>
+        3. Explore the available modules<br>
+        4. Start managing your utility operations!
+    </div>
+    
+    <p>If you need any assistance getting started, our support team is here to help. You can reach us at {{ contact_email }}.</p>
+    
+    <p>Welcome to the team!</p>
+</div>
+{% endblock %}

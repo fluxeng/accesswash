@@ -27,7 +27,7 @@ def print_step(step, msg): print(f"\n{Colors.BOLD}🚀 Step {step}: {msg}{Colors
 # Configuration
 CONFIG = {
    'ADMIN_EMAIL': 'kkimtai@gmail.com',
-   'PASSWORD': 'Aspire2infinity',
+   'PASSWORD': 'Welcome1!',
    'DEMO_UTILITY': 'Nairobi Water & Sewerage Company',
    'DEMO_DOMAIN': 'demo.accesswash.org'
 }
@@ -111,7 +111,7 @@ class CompactSeeder:
        admin, created = User.objects.get_or_create(
            email=CONFIG['ADMIN_EMAIL'],
            defaults={
-               'first_name': 'Kevin', 'last_name': 'Kimtai',
+               'first_name': 'Ken', 'last_name': 'Ruto',
                'role': User.ADMIN, 'is_staff': True, 'is_superuser': True
            }
        )
@@ -122,7 +122,7 @@ class CompactSeeder:
        
        # Demo utility users
        demo_users = [
-           {'email': 'manager@nairobidemo.accesswash.org', 'first_name': 'Sarah', 'last_name': 'Kimani', 'role': User.ADMIN, 'is_superuser': True},
+           {'email': 'demo1@accesswash.org', 'first_name': 'Demo', 'last_name': 'Account', 'role': User.ADMIN, 'is_superuser': True},
            {'email': 'supervisor@nairobidemo.accesswash.org', 'first_name': 'John', 'last_name': 'Mwangi', 'role': User.SUPERVISOR},
            {'email': 'field1@nairobidemo.accesswash.org', 'first_name': 'Peter', 'last_name': 'Otieno', 'role': User.FIELD_TECH},
            {'email': 'field2@nairobidemo.accesswash.org', 'first_name': 'Grace', 'last_name': 'Wanjiku', 'role': User.FIELD_TECH},

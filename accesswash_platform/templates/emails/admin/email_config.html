@@ -1,0 +1,70 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Email Configuration - {{ block.super }}{% endblock %}
+
+{% block content %}
+<h1>Email Configuration</h1>
+
+<p>Current email settings for your AccessWash platform:</p>
+
+<table class="config-table" style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+    <tr>
+        <th style="background: #f8f9fa; padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Setting</th>
+        <th style="background: #f8f9fa; padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Value</th>
+        <th style="background: #f8f9fa; padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Status</th>
+    </tr>
+    {% for key, value in config.items %}
+    <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold;">{{ key }}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-family: monospace; background: #f8f9fa;">{{ value }}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+            {% if value != "Not set" and value != "Not configured" %}
+                <span style="color: #28a745;">✅ Configured</span>
+            {% else %}
+                <span style="color: #dc3545;">❌ Not Set</span>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<div style="margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 8px;">
+    <h2>Setup Instructions</h2>
+    
+    <h3>For Gmail SMTP:</h3>
+    <ol>
+        <li>Enable 2-Factor Authentication on your Gmail account</li>
+        <li>Go to Google Account → Security → App passwords</li>
+        <li>Generate an app password for "Mail"</li>
+        <li>Add these settings to your .env file:</li>
+    </ol>
+    
+    <pre style="background: #fff; padding: 15px; border-radius: 4px; border: 1px solid #ddd;">
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=your-email@gmail.com
+EMAIL_HOST_PASSWORD=your-app-password
+DEFAULT_FROM_EMAIL=AccessWash Platform &lt;your-email@gmail.com&gt;
+ADMIN_EMAIL=your-admin@gmail.com
+    </pre>
+    
+    <h3>For Other Email Providers:</h3>
+    <ul>
+        <li><strong>Outlook/Hotmail:</strong> smtp-mail.outlook.com:587 (TLS)</li>
+        <li><strong>Yahoo:</strong> smtp.mail.yahoo.com:587 or 465 (SSL)</li>
+        <li><strong>Custom SMTP:</strong> Contact your email provider for settings</li>
+    </ul>
+</div>
+
+<div style="margin: 20px 0;">
+    <a href="{% url 'core:email_test' %}" class="btn btn-primary" 
+       style="padding: 10px 20px; background: #417690; color: white; text-decoration: none; border-radius: 4px;">
+        Test Email Configuration
+    </a>
+    <a href="/admin/" style="margin-left: 10px; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 4px;">
+        Back to Admin
+    </a>
+</div>
+{% endblock %}
