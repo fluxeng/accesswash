@@ -7,8 +7,11 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils import timezone
 from datetime import timedelta
 import uuid
+import logging
 
 from .models import User, UserInvitation
+
+logger = logging.getLogger(__name__)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -79,13 +82,21 @@ class UserCreateSerializer(serializers.ModelSerializer):
             user.created_by = request.user
             user.save(update_fields=['created_by'])
         
-        # Send invitation if requested and no password provided
-        if send_invitation and not password:
-            self._create_invitation(user)
+        # Send invitation if requested
+        if send_invitation:
+            invitation = self._create_invitation(user, password)
+            
+            # Send email invitation
+            try:
+                from core.email_service import email_service
+                email_service.send_user_invitation(invitation, password)
+                logger.info(f"Invitation email sent to {user.email}")
+            except Exception as e:
+                logger.error(f"Failed to send invitation email to {user.email}: {e}")
         
         return user
     
-    def _create_invitation(self, user):
+    def _create_invitation(self, user, password=None):
         """Create an invitation for the user"""
         request = self.context.get('request')
         invitation = UserInvitation.objects.create(
@@ -94,9 +105,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
             invited_by=request.user if request else None,
             expires_on=timezone.now() + timedelta(days=7)
         )
-        
-        # TODO: Send invitation email
-        # send_invitation_email(invitation)
         
         return invitation
 
@@ -177,8 +185,35 @@ class ForgotPasswordSerializer(serializers.Serializer):
             token = default_token_generator.make_token(self.user)
             uid = urlsafe_base64_encode(force_bytes(self.user.pk))
             
-            # TODO: Send password reset email with token and uid
-            # send_password_reset_email(self.user, token, uid)
+            # Get current tenant context for URL
+            from django.db import connection
+            from django.conf import settings
+            
+            tenant = getattr(connection, 'tenant', None)
+            
+            if tenant and hasattr(tenant, 'domains'):
+                try:
+                    primary_domain = tenant.domains.filter(is_primary=True, is_active=True).first()
+                    if primary_domain:
+                        protocol = 'https' if not settings.DEBUG else 'http'
+                        port = '' if not settings.DEBUG else ':8000'
+                        base_url = f"{protocol}://{primary_domain.domain}{port}"
+                    else:
+                        base_url = getattr(settings, 'PLATFORM_URL', 'https://api.accesswash.org')
+                except:
+                    base_url = getattr(settings, 'PLATFORM_URL', 'https://api.accesswash.org')
+            else:
+                base_url = getattr(settings, 'PLATFORM_URL', 'https://api.accesswash.org')
+            
+            reset_url = f"{base_url}/auth/reset-password/{uid}/{token}/"
+            
+            # Send password reset email
+            try:
+                from core.email_service import email_service
+                email_service.send_password_reset(self.user, reset_url)
+                logger.info(f"Password reset email sent to {self.user.email}")
+            except Exception as e:
+                logger.error(f"Failed to send password reset email to {self.user.email}: {e}")
             
             return {'uid': uid, 'token': token}
         return None
@@ -210,6 +245,15 @@ class ResetPasswordSerializer(serializers.Serializer):
     def save(self):
         self.user.set_password(self.validated_data['new_password'])
         self.user.save()
+        
+        # Send password changed confirmation email
+        try:
+            from core.email_service import email_service
+            email_service.send_password_changed(self.user)
+            logger.info(f"Password changed confirmation sent to {self.user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send password changed email to {self.user.email}: {e}")
+        
         return self.user
 
 

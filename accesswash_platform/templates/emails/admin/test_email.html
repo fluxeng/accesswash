@@ -1,0 +1,47 @@
+{% extends "emails/base/email_base.html" %}
+
+{% block content %}
+<div class="greeting">
+    Email Test Successful!
+</div>
+
+<div class="content">
+    <div class="info-box success">
+        <strong>✅ Email Configuration Working</strong><br>
+        Your AccessWash platform email system is properly configured and working.
+    </div>
+    
+    <p>{{ test_message }}</p>
+    
+    <p>This test email confirms that:</p>
+    <ul>
+        <li>SMTP settings are correct</li>
+        <li>Email templates are loading properly</li>
+        <li>Multi-tenant branding is working</li>
+        <li>Email delivery is successful</li>
+    </ul>
+    
+    <div class="details-table">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <th style="text-align: left; padding: 8px; background: #f9fafb;">Utility:</th>
+                <td style="padding: 8px;">{{ utility_name }}</td>
+            </tr>
+            <tr>
+                <th style="text-align: left; padding: 8px; background: #f9fafb;">Schema:</th>
+                <td style="padding: 8px;">{{ tenant_schema|default:"public" }}</td>
+            </tr>
+            <tr>
+                <th style="text-align: left; padding: 8px; background: #f9fafb;">Frontend URL:</th>
+                <td style="padding: 8px;">{{ frontend_url }}</td>
+            </tr>
+            <tr>
+                <th style="text-align: left; padding: 8px; background: #f9fafb;">Platform Email:</th>
+                <td style="padding: 8px;">{{ is_platform_email|yesno:"Yes,No" }}</td>
+            </tr>
+        </table>
+    </div>
+    
+    <p>You can now start using the email system for user invitations, password resets, and notifications!</p>
+</div>
+{% endblock %}

@@ -340,16 +340,34 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_AGE = 86400  # 24 hours
 
+
 # Email Configuration
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Development
-if not DEBUG:
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+
+# Force SMTP backend if credentials are provided (for development testing)
+if os.getenv('EMAIL_HOST_USER') and os.getenv('EMAIL_HOST_PASSWORD'):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = os.getenv('EMAIL_HOST')
+    EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
     EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-    EMAIL_USE_TLS = True
+    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
     EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
     EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@accesswash.org')
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'AccessWash Platform <{os.getenv("EMAIL_HOST_USER")}>')
+    
+    # Email timeout and security settings
+    EMAIL_TIMEOUT = 30
+    EMAIL_USE_LOCALTIME = False
+    
+    print(f"📧 Email configured: {EMAIL_HOST_USER} via {EMAIL_HOST}:{EMAIL_PORT}")
+else:
+    print("📧 Email using console backend (no SMTP credentials)")
+
+# Multi-tenant email settings
+PLATFORM_URL = os.getenv('PLATFORM_URL', 'https://api.accesswash.org')
+ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', EMAIL_HOST_USER if 'EMAIL_HOST_USER' in os.environ else 'admin@accesswash.org')
+
+# Email rate limiting (emails per hour)
+EMAIL_RATE_LIMIT = 100
 
 # Security Settings for Production
 if not DEBUG:

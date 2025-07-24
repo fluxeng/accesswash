@@ -8,6 +8,10 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils import timezone
 from django.contrib.auth import logout
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+from django.conf import settings
 from datetime import timedelta
 import logging
 
@@ -19,6 +23,7 @@ from .serializers import (
     ForgotPasswordSerializer, ResetPasswordSerializer, LogoutSerializer
 )
 from .permissions import IsOwnerOrAdmin, IsSupervisorOrAdmin
+from core.email_service import email_service
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +64,10 @@ class ForgotPasswordView(APIView):
         serializer = ForgotPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Always return success for security (don't reveal if email exists)
+        # This will send the email if user exists
         serializer.save()
         
+        # Always return success for security (don't reveal if email exists)
         return Response({
             'success': True,
             'message': 'If an account with this email exists, a password reset link has been sent.'
@@ -262,6 +268,12 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         
+        # Send password changed confirmation
+        try:
+            email_service.send_password_changed(request.user)
+        except Exception as e:
+            logger.warning(f"Failed to send password changed email to {request.user.email}: {e}")
+        
         # Generate new tokens
         refresh = RefreshToken.for_user(request.user)
         
@@ -318,6 +330,12 @@ class UserViewSet(viewsets.ModelViewSet):
         
         user.is_active = True
         user.save(update_fields=['is_active'])
+        
+        # Send account activated email
+        try:
+            email_service.send_account_activated(user)
+        except Exception as e:
+            logger.warning(f"Failed to send account activated email to {user.email}: {e}")
         
         return Response({
             'success': True,
@@ -421,6 +439,12 @@ class UserInvitationViewSet(viewsets.ModelViewSet):
         # Mark invitation as accepted
         invitation.accept()
         
+        # Send account activated email
+        try:
+            email_service.send_account_activated(user)
+        except Exception as e:
+            logger.warning(f"Failed to send account activated email to {user.email}: {e}")
+        
         # Generate tokens
         refresh = RefreshToken.for_user(user)
         
@@ -449,10 +473,16 @@ class UserInvitationViewSet(viewsets.ModelViewSet):
         invitation.expires_on = timezone.now() + timedelta(days=7)
         invitation.save(update_fields=['expires_on'])
         
-        # TODO: Resend invitation email
-        # send_invitation_email(invitation)
-        
-        return Response({
-            'success': True,
-            'message': 'Invitation resent successfully'
-        })
+        # Resend invitation email
+        try:
+            email_service.send_user_invitation(invitation)
+            return Response({
+                'success': True,
+                'message': 'Invitation resent successfully'
+            })
+        except Exception as e:
+            logger.error(f"Failed to resend invitation email: {e}")
+            return Response({
+                'success': False,
+                'error': 'Failed to resend invitation email'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
