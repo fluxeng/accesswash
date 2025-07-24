@@ -364,4 +364,20 @@ SPECTACULAR_SETTINGS = {
     'SCHEMA_PATH_PREFIX': '/api/',
 }
 
-print(f"🌐 Django configured: {len(ALLOWED_HOSTS)} hosts, {len(CSRF_TRUSTED_ORIGINS)} CSRF origins")
+
+# Session Configuration - Use database instead of cache
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE = 86400
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': 'redis://redis:6379/1',
+        'KEY_PREFIX': 'accesswash_v1',
+        'TIMEOUT': 300,
+    }
+}
