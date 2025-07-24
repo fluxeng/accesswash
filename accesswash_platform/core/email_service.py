@@ -1,138 +1,163 @@
 """
-AccessWash Email Service
-Multi-tenant email handling with templates and utility branding
+File: accesswash_platform/core/email_service.py
+Complete enhanced email service with robust error handling
 """
 
 import logging
 from typing import List, Dict, Any, Optional
-from django.core.mail import EmailMultiAlternatives, send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail, get_connection
 from django.template.loader import render_to_string
+from django.template import TemplateDoesNotExist
 from django.conf import settings
 from django.utils.html import strip_tags
 from django.db import connection
-from django.urls import reverse
-from django.contrib.sites.shortcuts import get_current_site
+import smtplib
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('core.email_service')
 
 
 class EmailService:
-    """Centralized email service with multi-tenant support"""
+    """Enhanced email service with multi-tenant support"""
     
     def __init__(self):
         self.default_from_email = settings.DEFAULT_FROM_EMAIL
         self.platform_url = getattr(settings, 'PLATFORM_URL', 'https://api.accesswash.org')
+        self._validate_email_config()
+    
+    def _validate_email_config(self):
+        """Validate email configuration on startup"""
+        try:
+            if settings.EMAIL_BACKEND != 'django.core.mail.backends.console.EmailBackend':
+                # Test SMTP connection
+                connection = get_connection()
+                connection.open()
+                connection.close()
+                logger.info("✅ Email configuration validated successfully")
+            else:
+                logger.info("📧 Using console email backend for development")
+        except Exception as e:
+            logger.warning(f"⚠️  Email configuration test failed: {e}")
     
     def get_tenant_context(self) -> Dict[str, Any]:
-        """Get tenant-specific context for email templates"""
+        """Get tenant-specific context with fallback handling"""
         try:
-            # Get current tenant info
+            # Get current connection info
             tenant = getattr(connection, 'tenant', None)
+            schema_name = getattr(connection, 'schema_name', 'public')
             
-            # Determine if we're in public schema or tenant schema
-            is_public_schema = (
-                not tenant or 
-                getattr(tenant, 'schema_name', None) == 'public' or
-                getattr(connection, 'schema_name', None) == 'public'
-            )
+            # Public schema context
+            if not tenant or schema_name == 'public':
+                return self._get_platform_context()
             
-            if is_public_schema:
-                # Platform-level context
-                return {
-                    'is_platform_email': True,
-                    'utility_name': 'AccessWash Platform',
-                    'utility_logo': None,
-                    'primary_color': '#2563eb',
-                    'secondary_color': '#1e40af',
-                    'contact_phone': '',
-                    'contact_email': settings.ADMIN_EMAIL,
-                    'website': self.platform_url,
-                    'frontend_url': self.platform_url,
-                    'from_email': self.default_from_email,
-                    'address': '',
-                }
-            
-            # Tenant-specific context
+            # Try tenant-specific context
             try:
-                from core.models import UtilitySettings
-                utility_settings = UtilitySettings.objects.first()
-                
-                # Get tenant's primary domain
-                tenant_domain = None
-                if tenant and hasattr(tenant, 'domains'):
-                    primary_domain = tenant.domains.filter(is_primary=True, is_active=True).first()
-                    if primary_domain:
-                        # Use HTTPS in production, HTTP in development
-                        protocol = 'https' if not settings.DEBUG else 'http'
-                        port = '' if not settings.DEBUG else ':8000'
-                        tenant_domain = f"{protocol}://{primary_domain.domain}{port}"
-                
-                if utility_settings:
-                    # Use utility's email if available, otherwise default
-                    from_email = self.default_from_email
-                    if utility_settings.contact_email:
-                        from_email = f"{utility_settings.utility_name} <{utility_settings.contact_email}>"
-                    
-                    return {
-                        'is_platform_email': False,
-                        'utility_name': utility_settings.utility_name,
-                        'utility_logo': utility_settings.logo.url if utility_settings.logo else None,
-                        'primary_color': utility_settings.primary_color,
-                        'secondary_color': utility_settings.secondary_color,
-                        'contact_phone': utility_settings.contact_phone,
-                        'contact_email': utility_settings.contact_email or settings.ADMIN_EMAIL,
-                        'website': utility_settings.website or tenant_domain,
-                        'frontend_url': tenant_domain or self.platform_url,
-                        'from_email': from_email,
-                        'address': utility_settings.address,
-                        'tenant_schema': tenant.schema_name if tenant else None,
-                    }
+                return self._get_tenant_context(tenant)
             except Exception as e:
-                logger.warning(f"Could not get utility settings: {e}")
-            
-            # Fallback tenant context
-            tenant_domain = self.platform_url
-            if tenant and hasattr(tenant, 'domains'):
-                try:
-                    primary_domain = tenant.domains.filter(is_primary=True, is_active=True).first()
-                    if primary_domain:
-                        protocol = 'https' if not settings.DEBUG else 'http'
-                        port = '' if not settings.DEBUG else ':8000'
-                        tenant_domain = f"{protocol}://{primary_domain.domain}{port}"
-                except:
-                    pass
+                logger.warning(f"Failed to get tenant context: {e}")
+                return self._get_fallback_context(tenant)
+                
+        except Exception as e:
+            logger.error(f"Error in get_tenant_context: {e}")
+            return self._get_default_context()
+    
+    def _get_platform_context(self) -> Dict[str, Any]:
+        """Platform-level email context"""
+        return {
+            'is_platform_email': True,
+            'utility_name': 'AccessWash Platform',
+            'utility_logo': None,
+            'primary_color': '#2563eb',
+            'secondary_color': '#1e40af',
+            'contact_phone': '',
+            'contact_email': settings.ADMIN_EMAIL,
+            'website': self.platform_url,
+            'frontend_url': self.platform_url,
+            'from_email': self.default_from_email,
+            'address': '',
+            'tenant_schema': 'public',
+        }
+    
+    def _get_tenant_context(self, tenant) -> Dict[str, Any]:
+        """Tenant-specific email context"""
+        from core.models import UtilitySettings
+        
+        # Get tenant domain
+        tenant_domain = self._build_tenant_domain(tenant)
+        
+        # Try to get utility settings
+        utility_settings = UtilitySettings.objects.first()
+        
+        if utility_settings:
+            from_email = self.default_from_email
+            if utility_settings.contact_email:
+                from_email = f"{utility_settings.utility_name} <{utility_settings.contact_email}>"
             
             return {
                 'is_platform_email': False,
-                'utility_name': tenant.name if tenant else 'Water Utility',
-                'utility_logo': None,
-                'primary_color': '#2563eb',
-                'secondary_color': '#1e40af',
-                'contact_phone': '',
-                'contact_email': settings.ADMIN_EMAIL,
-                'website': tenant_domain,
+                'utility_name': utility_settings.utility_name,
+                'utility_logo': utility_settings.logo.url if utility_settings.logo else None,
+                'primary_color': utility_settings.primary_color,
+                'secondary_color': utility_settings.secondary_color,
+                'contact_phone': utility_settings.contact_phone or '',
+                'contact_email': utility_settings.contact_email or settings.ADMIN_EMAIL,
+                'website': utility_settings.website or tenant_domain,
                 'frontend_url': tenant_domain,
-                'from_email': self.default_from_email,
-                'address': '',
-                'tenant_schema': tenant.schema_name if tenant else None,
+                'from_email': from_email,
+                'address': utility_settings.address or '',
+                'tenant_schema': tenant.schema_name,
             }
-            
+        
+        return self._get_fallback_context(tenant)
+    
+    def _get_fallback_context(self, tenant) -> Dict[str, Any]:
+        """Fallback context when tenant settings unavailable"""
+        tenant_domain = self._build_tenant_domain(tenant)
+        
+        return {
+            'is_platform_email': False,
+            'utility_name': getattr(tenant, 'name', 'Water Utility'),
+            'utility_logo': None,
+            'primary_color': '#2563eb',
+            'secondary_color': '#1e40af',
+            'contact_phone': '',
+            'contact_email': settings.ADMIN_EMAIL,
+            'website': tenant_domain,
+            'frontend_url': tenant_domain,
+            'from_email': self.default_from_email,
+            'address': '',
+            'tenant_schema': getattr(tenant, 'schema_name', 'unknown'),
+        }
+    
+    def _get_default_context(self) -> Dict[str, Any]:
+        """Ultimate fallback context"""
+        return {
+            'is_platform_email': True,
+            'utility_name': 'AccessWash Platform',
+            'utility_logo': None,
+            'primary_color': '#2563eb',
+            'secondary_color': '#1e40af',
+            'contact_phone': '',
+            'contact_email': settings.ADMIN_EMAIL,
+            'website': self.platform_url,
+            'frontend_url': self.platform_url,
+            'from_email': self.default_from_email,
+            'address': '',
+            'tenant_schema': 'unknown',
+        }
+    
+    def _build_tenant_domain(self, tenant) -> str:
+        """Build tenant domain URL"""
+        try:
+            if hasattr(tenant, 'domains'):
+                primary_domain = tenant.domains.filter(is_primary=True, is_active=True).first()
+                if primary_domain:
+                    protocol = 'https' if not settings.DEBUG else 'http'
+                    port = '' if not settings.DEBUG else ':8000'
+                    return f"{protocol}://{primary_domain.domain}{port}"
         except Exception as e:
-            logger.error(f"Error getting tenant context: {e}")
-            # Ultimate fallback
-            return {
-                'is_platform_email': True,
-                'utility_name': 'AccessWash Platform',
-                'utility_logo': None,
-                'primary_color': '#2563eb',
-                'secondary_color': '#1e40af',
-                'contact_phone': '',
-                'contact_email': settings.ADMIN_EMAIL,
-                'website': self.platform_url,
-                'frontend_url': self.platform_url,
-                'from_email': self.default_from_email,
-                'address': '',
-            }
+            logger.warning(f"Could not build tenant domain: {e}")
+        
+        return self.platform_url
     
     def send_email(
         self,
@@ -145,19 +170,19 @@ class EmailService:
         attachments: List[Dict] = None
     ) -> bool:
         """
-        Send an email using templates
+        Send email with template and error handling
         
         Args:
-            template_name: Template name (without .html/.txt extension)
+            template_name: Template name without extension
             context: Template context variables
-            to_emails: List of recipient email addresses
-            subject: Email subject (can be overridden by template)
-            from_email: Sender email address
-            reply_to: Reply-to email addresses
-            attachments: List of attachment dicts {'filename': str, 'content': bytes, 'mimetype': str}
+            to_emails: List of recipient emails
+            subject: Email subject (optional)
+            from_email: Sender email (optional)
+            reply_to: Reply-to emails (optional)
+            attachments: List of attachments (optional)
         
         Returns:
-            bool: True if email sent successfully
+            bool: True if sent successfully
         """
         try:
             # Merge with tenant context
@@ -168,37 +193,26 @@ class EmailService:
                 'support_email': settings.ADMIN_EMAIL,
             }
             
-            # Render HTML template
-            html_template = f'emails/{template_name}.html'
-            html_content = render_to_string(html_template, full_context)
+            # Render templates
+            html_content = self._render_html_template(template_name, full_context)
+            text_content = self._render_text_template(template_name, full_context, html_content)
             
-            # Try to render text template, fall back to stripping HTML
-            try:
-                text_template = f'emails/{template_name}.txt'
-                text_content = render_to_string(text_template, full_context)
-            except:
-                text_content = strip_tags(html_content)
-            
-            # Extract subject from context if not provided
-            if not subject:
-                subject = full_context.get('email_subject', 'Notification from AccessWash')
-            
-            # Use tenant-specific from email if available
+            # Determine subject and from_email
+            email_subject = subject or full_context.get('email_subject', 'Notification from AccessWash')
             email_from = from_email or full_context.get('from_email', self.default_from_email)
             
-            # Create email
+            # Create and send email
             email = EmailMultiAlternatives(
-                subject=subject,
+                subject=email_subject,
                 body=text_content,
                 from_email=email_from,
                 to=to_emails,
                 reply_to=reply_to
             )
             
-            # Attach HTML version
             email.attach_alternative(html_content, "text/html")
             
-            # Add attachments if provided
+            # Add attachments
             if attachments:
                 for attachment in attachments:
                     email.attach(
@@ -208,20 +222,74 @@ class EmailService:
                     )
             
             # Send email
-            email.send(fail_silently=False)
+            result = email.send(fail_silently=False)
             
-            logger.info(f"📧 Email sent: {template_name} to {', '.join(to_emails)}")
-            return True
-            
+            if result:
+                logger.info(f"📧 Email sent: {template_name} to {', '.join(to_emails)}")
+                return True
+            else:
+                logger.error(f"❌ Failed to send email: {template_name} to {', '.join(to_emails)}")
+                return False
+                
         except Exception as e:
-            logger.error(f"❌ Failed to send email {template_name} to {', '.join(to_emails)}: {e}")
+            logger.error(f"❌ Email error ({template_name}): {e}")
             return False
     
+    def _render_html_template(self, template_name: str, context: Dict[str, Any]) -> str:
+        """Render HTML email template with fallback"""
+        try:
+            html_template = f'emails/{template_name}.html'
+            return render_to_string(html_template, context)
+        except TemplateDoesNotExist:
+            logger.warning(f"HTML template not found: emails/{template_name}.html")
+            return self._create_fallback_html(context)
+    
+    def _render_text_template(self, template_name: str, context: Dict[str, Any], html_content: str) -> str:
+        """Render text email template with fallback"""
+        try:
+            text_template = f'emails/{template_name}.txt'
+            return render_to_string(text_template, context)
+        except TemplateDoesNotExist:
+            # Strip HTML tags as fallback
+            return strip_tags(html_content)
+    
+    def _create_fallback_html(self, context: Dict[str, Any]) -> str:
+        """Create basic HTML email when template is missing"""
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{context.get('email_subject', 'AccessWash Notification')}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: {context.get('primary_color', '#2563eb')}; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background: #f9f9f9; }}
+                .footer {{ text-align: center; color: #666; font-size: 12px; padding: 10px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>{context.get('utility_name', 'AccessWash Platform')}</h1>
+                </div>
+                <div class="content">
+                    <p>This is a notification from {context.get('utility_name', 'AccessWash Platform')}.</p>
+                    <p>If you have any questions, please contact us at {context.get('contact_email', 'support@accesswash.org')}.</p>
+                </div>
+                <div class="footer">
+                    <p>&copy; {context.get('utility_name', 'AccessWash Platform')}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+    
     def send_test_email(self, to_email: str) -> bool:
-        """Send a test email to verify email configuration"""
+        """Send test email to verify configuration"""
         context = {
             'test_message': 'This is a test email from AccessWash Platform.',
-            'email_subject': 'AccessWash Email Test'
+            'email_subject': 'AccessWash Email Test - Configuration Working'
         }
         
         return self.send_email(
@@ -230,7 +298,7 @@ class EmailService:
             to_emails=[to_email]
         )
     
-    def send_user_invitation(self, invitation, password=None):
+    def send_user_invitation(self, invitation, password=None) -> bool:
         """Send user invitation email"""
         tenant_context = self.get_tenant_context()
         
@@ -241,7 +309,7 @@ class EmailService:
             'invited_by': invitation.invited_by.get_full_name() if invitation.invited_by else 'Administrator',
             'invitation_url': f"{tenant_context['frontend_url']}/auth/accept-invitation/{invitation.token}/",
             'expires_on': invitation.expires_on,
-            'password': password,  # Only if password was set
+            'password': password,
             'email_subject': f'You\'re invited to join {tenant_context["utility_name"]}'
         }
         
@@ -250,11 +318,10 @@ class EmailService:
         return self.send_email(
             template_name=template,
             context=context,
-            to_emails=[invitation.email],
-            subject=context['email_subject']
+            to_emails=[invitation.email]
         )
     
-    def send_password_reset(self, user, reset_url):
+    def send_password_reset(self, user, reset_url: str) -> bool:
         """Send password reset email"""
         context = {
             'user': user,
@@ -268,7 +335,7 @@ class EmailService:
             to_emails=[user.email]
         )
     
-    def send_password_changed(self, user):
+    def send_password_changed(self, user) -> bool:
         """Send password changed confirmation"""
         context = {
             'user': user,
@@ -281,7 +348,7 @@ class EmailService:
             to_emails=[user.email]
         )
     
-    def send_account_activated(self, user):
+    def send_account_activated(self, user) -> bool:
         """Send account activation confirmation"""
         tenant_context = self.get_tenant_context()
         
@@ -295,77 +362,6 @@ class EmailService:
             template_name='auth/account_activated',
             context=context,
             to_emails=[user.email]
-        )
-    
-    def send_inspection_reminder(self, asset, inspector):
-        """Send asset inspection reminder"""
-        tenant_context = self.get_tenant_context()
-        
-        context = {
-            'asset': asset,
-            'inspector': inspector,
-            'inspect_url': f"{tenant_context['frontend_url']}/admin/",
-            'email_subject': f'Inspection Due: {asset.name}'
-        }
-        
-        return self.send_email(
-            template_name='operations/inspection_reminder',
-            context=context,
-            to_emails=[inspector.email]
-        )
-    
-    def send_maintenance_alert(self, asset, assigned_users):
-        """Send maintenance required alert"""
-        tenant_context = self.get_tenant_context()
-        emails = [user.email for user in assigned_users]
-        
-        context = {
-            'asset': asset,
-            'asset_url': f"{tenant_context['frontend_url']}/admin/",
-            'email_subject': f'Maintenance Required: {asset.name}'
-        }
-        
-        return self.send_email(
-            template_name='operations/maintenance_alert',
-            context=context,
-            to_emails=emails
-        )
-    
-    def send_daily_summary(self, user, summary_data):
-        """Send daily work summary to field technician"""
-        tenant_context = self.get_tenant_context()
-        
-        context = {
-            'user': user,
-            'summary': summary_data,
-            'dashboard_url': f"{tenant_context['frontend_url']}/admin/",
-            'email_subject': f'Daily Summary - {summary_data.get("date", "Today")}'
-        }
-        
-        return self.send_email(
-            template_name='operations/daily_summary',
-            context=context,
-            to_emails=[user.email]
-        )
-    
-    def send_system_alert(self, alert_type, message, admin_emails=None):
-        """Send system alert to administrators"""
-        if not admin_emails:
-            admin_emails = [settings.ADMIN_EMAIL]
-        
-        # Always use platform context for system alerts
-        context = {
-            'alert_type': alert_type,
-            'message': message,
-            'admin_url': f"{self.platform_url}/admin/",
-            'email_subject': f'System Alert: {alert_type}',
-            'is_system_alert': True,  # Flag to use platform branding
-        }
-        
-        return self.send_email(
-            template_name='admin/system_alert',
-            context=context,
-            to_emails=admin_emails
         )
 
 

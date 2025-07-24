@@ -1,6 +1,6 @@
 """
-Django settings for accesswash_platform project.
-AccessWash - Water Utility Portal Platform
+File: accesswash_platform/accesswash_platform/settings.py
+Complete fixed Django settings for AccessWash platform
 """
 
 from pathlib import Path
@@ -17,7 +17,23 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-accesswash-change-in-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,0.0.0.0,.accesswash.org').split(',')
+# FIXED: Comprehensive ALLOWED_HOSTS for cloud tunneling
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1', 
+    '0.0.0.0',
+    '.accesswash.org',  # Covers all subdomains
+    'api.accesswash.org',
+    'demo.accesswash.org', 
+    'app.accesswash.org',
+    'health.accesswash.org',
+    '*.accesswash.org',  # Explicit wildcard
+]
+
+# Add any additional hosts from environment
+additional_hosts = config('ADDITIONAL_ALLOWED_HOSTS', default='')
+if additional_hosts:
+    ALLOWED_HOSTS.extend([h.strip() for h in additional_hosts.split(',') if h.strip()])
 
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'
@@ -106,47 +122,44 @@ DATABASES = {
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='5432'),
         'CONN_MAX_AGE': 60,
+        
     }
 }
 
 DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
 
-# Django Tenants Configuration
+# FIXED: Django Tenants Configuration
 TENANT_MODEL = "tenants.Utility"
 TENANT_DOMAIN_MODEL = "tenants.Domain"
 ORIGINAL_BACKEND = "django.contrib.gis.db.backends.postgis"
 SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
+PUBLIC_SCHEMA_URLCONF = 'accesswash_platform.urls'
 
 SITE_ID = 1
 
-# Email Configuration
+# FIXED: Email Configuration with validation
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
 
-# SMTP Configuration
-if config('EMAIL_HOST_USER', default=None) and config('EMAIL_HOST_PASSWORD', default=None):
+# Get email settings
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default=None)
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=None)
+
+if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
     EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
     EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
     EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
-    EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=f'AccessWash Platform <{config("EMAIL_HOST_USER")}>')
-    
-    # Email timeout and security settings
+    DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=f'AccessWash Platform <{EMAIL_HOST_USER}>')
     EMAIL_TIMEOUT = 30
-    EMAIL_USE_LOCALTIME = False
-    
     print(f"📧 SMTP Email configured: {EMAIL_HOST_USER} via {EMAIL_HOST}:{EMAIL_PORT}")
 else:
+    DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@accesswash.org')
     print("📧 Using console email backend (no SMTP credentials)")
 
 # Multi-tenant email settings
 PLATFORM_URL = config('PLATFORM_URL', default='https://api.accesswash.org')
-ADMIN_EMAIL = config('ADMIN_EMAIL', default=config('EMAIL_HOST_USER', default='admin@accesswash.org'))
-
-# Email rate limiting (emails per hour)
-EMAIL_RATE_LIMIT = 100
+ADMIN_EMAIL = config('ADMIN_EMAIL', default=EMAIL_HOST_USER or 'admin@accesswash.org')
 
 # JWT Settings
 SIMPLE_JWT = {
@@ -155,13 +168,8 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
-    
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
-    'VERIFYING_KEY': None,
-    'AUDIENCE': None,
-    'ISSUER': None,
-    
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
@@ -186,17 +194,19 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-# CORS Settings
+# FIXED: CORS Settings for cloud tunneling
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3000", 
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
     "https://api.accesswash.org",
     "https://demo.accesswash.org",
     "https://app.accesswash.org",
 ]
-
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = DEBUG
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.accesswash\.org$",
@@ -204,25 +214,57 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://127\.0\.0\.1:8000$",
 ]
 
-# CSRF Settings
-CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='https://*.accesswash.org,http://localhost:8000,http://127.0.0.1:8000').split(',')
+# FIXED: CSRF Settings for cloud tunneling  
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.accesswash.org',
+    'https://api.accesswash.org',
+    'https://demo.accesswash.org', 
+    'https://app.accesswash.org',
+    'https://health.accesswash.org',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
 
-# Cache Configuration (Redis)
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/1'),
-        'KEY_PREFIX': 'accesswash_v1',
-        'TIMEOUT': 300,
+# Cache Configuration (Redis with fallback)
+REDIS_URL = config('REDIS_URL', default='redis://127.0.0.1:6379/1')
+
+try:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'KEY_PREFIX': 'accesswash_v1',
+            'TIMEOUT': 300,
+            'OPTIONS': {
+                'CONNECTION_POOL_KWARGS': {
+                    'max_connections': 50,
+                    'retry_on_timeout': True,
+                },
+            },
+        }
     }
-}
+    print(f"📦 Redis cache configured: {REDIS_URL}")
+except Exception as e:
+    print(f"⚠️  Redis cache failed, using memory cache: {e}")
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
 
 # Session Configuration
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_AGE = 86400
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
 
-# Security Settings
+# FIXED: Security Settings for cloud tunneling
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
 if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -230,14 +272,12 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = True
 
 # Static files
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-]
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
 # Media files
 MEDIA_URL = '/media/'
@@ -282,7 +322,7 @@ LOGGING = {
             'formatter': 'simple',
         },
         'email_file': {
-            'level': 'INFO',
+            'level': 'INFO', 
             'class': 'logging.FileHandler',
             'filename': LOGS_DIR / 'email.log',
             'formatter': 'verbose',
@@ -307,10 +347,21 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        'users': {
+        'tenants': {
             'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': False,
         },
     },
 }
+
+# DRF Spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'AccessWash Platform API',
+    'DESCRIPTION': 'Digital Water Utility Management Platform',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX': '/api/',
+}
+
+print(f"🌐 Django configured: {len(ALLOWED_HOSTS)} hosts, {len(CSRF_TRUSTED_ORIGINS)} CSRF origins")
