@@ -283,7 +283,7 @@ main() {
     start_logs
     show_status
     
-    success "Startup completed!"
+    success "AccessWASH Platform Startup completed!"
     echo "$(date): Success" > .accesswash_status
     trap - EXIT
 }

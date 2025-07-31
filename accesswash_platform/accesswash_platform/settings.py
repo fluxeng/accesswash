@@ -357,7 +357,7 @@ LOGGING = {
 
 # DRF Spectacular settings
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'AccessWash Platform API',
+    'TITLE': 'AccessWASH Platform API',
     'DESCRIPTION': 'Digital Water Utility Management Platform',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
@@ -372,7 +372,7 @@ SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 
-
+# CACHES Configuration of Redis which is used for caching things like sessions, etc
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
