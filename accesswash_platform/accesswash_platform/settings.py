@@ -38,6 +38,11 @@ if additional_hosts:
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'
 
+AUTHENTICATION_BACKENDS = [
+    'portal.authentication.CustomerAuthenticationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 # Application definition
 SHARED_APPS = (
     'django_tenants',
@@ -72,6 +77,8 @@ TENANT_APPS = (
     'users',          # Utility user models
     'core',           # Core accesswash platform 
     'distro',         # Field operations
+    'portal',         # Customer portal 
+    'support',        # Customer support
 )
 
 INSTALLED_APPS = list(SHARED_APPS) + [
@@ -152,10 +159,9 @@ if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
     DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=f'AccessWash Platform <{EMAIL_HOST_USER}>')
     EMAIL_TIMEOUT = 30
-    print(f"📧 SMTP Email configured: {EMAIL_HOST_USER} via {EMAIL_HOST}:{EMAIL_PORT}")
+
 else:
     DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@accesswash.org')
-    print("📧 Using console email backend (no SMTP credentials)")
 
 # Multi-tenant email settings
 PLATFORM_URL = config('PLATFORM_URL', default='https://api.accesswash.org')
@@ -179,6 +185,7 @@ SIMPLE_JWT = {
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'portal.authentication.CustomerTokenAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
@@ -243,7 +250,8 @@ try:
             },
         }
     }
-    print(f"📦 Redis cache configured: {REDIS_URL}")
+
+
 except Exception as e:
     print(f"⚠️  Redis cache failed, using memory cache: {e}")
     CACHES = {
