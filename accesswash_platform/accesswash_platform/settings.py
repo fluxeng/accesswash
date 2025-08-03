@@ -207,7 +207,9 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://127.0.0.1:3000", 
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3004",
+ 
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     "https://api.accesswash.org",
@@ -219,7 +221,11 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.accesswash\.org$",
     r"^http://localhost:8000$",
     r"^http://127\.0\.0\.1:8000$",
+    r"^http://localhost:3000$",
+    r"^http://127\.0\.0\.1:3000$",
 ]
+
+CORS_ALLOW_CREDENTIALS = True
 
 # FIXED: CSRF Settings for cloud tunneling  
 CSRF_TRUSTED_ORIGINS = [
@@ -230,6 +236,10 @@ CSRF_TRUSTED_ORIGINS = [
     'https://health.accesswash.org',
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3004',
+
 ]
 
 # Cache Configuration (Redis with fallback)

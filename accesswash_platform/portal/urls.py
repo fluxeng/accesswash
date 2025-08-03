@@ -17,6 +17,8 @@ urlpatterns = [
     # Customer endpoints
     path('dashboard/', views.CustomerDashboardView.as_view(), name='dashboard'),
     path('profile/', views.CustomerProfileView.as_view(), name='profile'),
+    path('auth/verify-connection/', views.verify_connection, name='verify_connection'),
+
     
     # Session management
     path('sessions/', views.customer_sessions_view, name='sessions'),

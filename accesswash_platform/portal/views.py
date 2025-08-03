@@ -392,3 +392,25 @@ def logout_session_view(request, session_id):
             'success': False,
             'error': 'Session not found'
         }, status=status.HTTP_404_NOT_FOUND)
+    
+
+
+# Adding Verify Connection View
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_connection(request):
+    """Verify customer connection details for registration"""
+    account_number = request.data.get('account_number')
+    meter_number = request.data.get('meter_number')
+    last_name = request.data.get('last_name')
+    phone_number = request.data.get('phone_number')
+    
+    # Your verification logic here
+    # Return connection details if found
+    
+    return Response({
+        'account_number': account_number or 'WS-2024-001234',
+        'address': '123 Sample Address',
+        'meter_number': meter_number or 'M-WL-789456',
+        'connection_date': 'January 2020'
+    })
