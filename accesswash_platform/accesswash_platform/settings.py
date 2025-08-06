@@ -203,18 +203,18 @@ REST_FRAMEWORK = {
 
 # FIXED: CORS Settings for cloud tunneling
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+
+CORS_ALLOW_ALL_ORIGINS = True # TODO: Change to False in production
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://127.0.0.1:3004",
  
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     "https://api.accesswash.org",
     "https://demo.accesswash.org",
-    "https://app.accesswash.org",
+    "https://*.accesswash.org",
 ]
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
