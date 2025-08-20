@@ -1,71 +1,81 @@
 version: '3.8'
 
 services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_files:/app/staticfiles:ro
+      - media_files:/app/media:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/log/nginx:/var/log/nginx
+    depends_on:
+      - web
+    networks:
+      - accesswash-network
+
   db:
     image: postgis/postgis:15-3.3
     restart: unless-stopped
     environment:
-      POSTGRES_DB: accesswash_db
-      POSTGRES_USER: accesswash_user
-      POSTGRES_PASSWORD: AccessWash2024!
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U accesswash_user -d accesswash_db"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - accesswash-network
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
+    networks:
+      - accesswash-network
 
   web:
     build: .
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - DEBUG=True
-      - SECRET_KEY=django-insecure-test-key-for-development-only
-      - DB_HOST=db
-      - DB_NAME=accesswash_db
-      - DB_USER=accesswash_user
-      - DB_PASSWORD=AccessWash2024!
-      - REDIS_URL=redis://redis:6379/1
-      
-      # Wildcard domain support - CRITICAL FOR INFINITE SUBDOMAINS
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,.accesswash.org
-      - CSRF_TRUSTED_ORIGINS=https://*.accesswash.org,http://localhost:8000,http://127.0.0.1:8000
-
-    ports:
-      - "8000:8000"
+      - PORT=8000
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - .:/app
       - static_files:/app/staticfiles
       - media_files:/app/media
+      - ./logs:/app/logs
+    networks:
+      - accesswash-network
 
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
   static_files:
-    driver: local
   media_files:
-    driver: local
+
+networks:
+  accesswash-network:
+    driver: bridge

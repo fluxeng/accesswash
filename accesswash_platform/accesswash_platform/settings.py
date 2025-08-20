@@ -130,7 +130,7 @@ WSGI_APPLICATION = 'accesswash_platform.wsgi.application'
 # Database configuration using dj-database-url for Railway
 DATABASES = {
     'default': dj_database_url.config(
-        default=config('DATABASE_URL', default='postgres://accesswash_user:AccessWash2024!@localhost:5432/accesswash_db'),
+        default=config('DATABASE_URL', default='postgres://accesswash:AccessWASH2025!@localhost:5432/accesswash'),
         conn_max_age=60,  # Keep connections alive for 60 seconds
         engine='django_tenants.postgresql_backend',  # Compatible with django_tenants
     )
